@@ -23,7 +23,10 @@ class RestApiError(requests.HTTPError):
             self.details: Any = response.json()
         except ValueError:
             self.details = response.text
-        super().__init__(f"API request failed ({self.status_code}) for {self.url}: {self.details}")
+        super().__init__(
+            f"API request failed ({self.status_code}) for {self.url}: {self.details}",
+            response=response,
+        )
 
 
 class RestClient:
@@ -35,6 +38,7 @@ class RestClient:
         *,
         timeout: float = 30,
         retries: int = 3,
+        max_retry_delay: float = 30,
         session: requests.Session | None = None,
     ) -> None:
         self.credential = credential
@@ -42,6 +46,7 @@ class RestClient:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.retries = retries
+        self.max_retry_delay = max_retry_delay
         self.session = session or requests.Session()
 
     def request(
@@ -67,14 +72,17 @@ class RestClient:
             except requests.RequestException:
                 if attempt == self.retries:
                     raise
-                delay = 2**attempt
+                delay = min(2**attempt, self.max_retry_delay)
             else:
                 if response.status_code < 400:
                     return response.json() if response.content else {}
                 if response.status_code not in {429, 500, 502, 503, 504} or attempt == self.retries:
                     raise RestApiError(response)
                 retry_after = response.headers.get("Retry-After")
-                delay = float(retry_after) if retry_after and retry_after.isdigit() else 2**attempt
+                delay = min(
+                    float(retry_after) if retry_after and retry_after.isdigit() else 2**attempt,
+                    self.max_retry_delay,
+                )
             time.sleep(delay)
         raise AssertionError("unreachable")
 

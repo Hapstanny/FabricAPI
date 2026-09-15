@@ -95,6 +95,24 @@ def test_raises_explicit_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
         list(FabricClient(Credential(), session=session).workspaces())
 
 
+def test_api_error_retains_response_and_retry_delay_is_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = requests.Session()
+    busy = response(429, {"error": "busy"})
+    busy.headers["Retry-After"] = "999"
+    replies = iter([busy, response(403, {"error": "denied"})])
+    delays: list[float] = []
+    monkeypatch.setattr(session, "request", lambda *args, **kwargs: next(replies))
+    monkeypatch.setattr("fabric_api.client.time.sleep", delays.append)
+
+    with pytest.raises(RestApiError) as error:
+        list(FabricClient(Credential(), session=session, max_retry_delay=5).workspaces())
+
+    assert delays == [5]
+    assert error.value.response is not None
+
+
 @pytest.mark.parametrize(
     ("operation", "expected_path"),
     [

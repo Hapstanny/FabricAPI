@@ -17,20 +17,21 @@ def main() -> None:
     parser.add_argument("--fabric-url", default="https://api.fabric.microsoft.com/v1")
     parser.add_argument("--powerbi-url", default="https://api.powerbi.com/v1.0/myorg")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name, command_args in {
+    commands: dict[str, list[tuple[str, str | None]]] = {
         "workspaces": [],
         "capacities": [],
         "domains": [],
         "deployment-pipelines": [],
         "gateways": [],
-        "items": ["workspace_id", "item_type"],
-        "pipeline-runs": ["workspace_id", "pipeline_id"],
-        "data-sources": ["gateway_id"],
-        "activity-events": ["start", "end"],
-    }.items():
+        "items": [("workspace_id", None), ("item_type", "?")],
+        "pipeline-runs": [("workspace_id", None), ("pipeline_id", None)],
+        "data-sources": [("gateway_id", None)],
+        "activity-events": [("start", None), ("end", None)],
+    }
+    for name, command_args in commands.items():
         command = sub.add_parser(name)
-        for arg in command_args:
-            command.add_argument(arg, nargs="?" if arg == "item_type" else None)
+        for arg, nargs in command_args:
+            command.add_argument(arg, nargs=nargs)
     args = parser.parse_args()
     credential = credential_from_environment(args.interactive)
     fabric, power_bi = (
