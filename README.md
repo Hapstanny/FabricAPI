@@ -46,6 +46,41 @@ python .\examples\list_workspaces.py
 
 It lists only workspaces the signed-in identity can access and does not modify tenant
 resources. Install development tools with `python -m pip install -e ".[dev]"` when
+
+To capture a consolidated inventory of every accessible workspace and every item in
+each workspace:
+
+```powershell
+python .\examples\export_workspace_inventory.py
+```
+
+The command writes `fabric-workspace-inventory.json` with:
+
+- the complete workspace payload returned by the Workspaces API;
+- the complete item payload returned for every workspace;
+- a flattened `rows` collection with workspace, capacity, and item fields; and
+- an explicit `errors` collection if an individual workspace cannot be read.
+
+Limit the export to a selected list of workspaces by repeating `--workspace-id`:
+
+```powershell
+python .\examples\export_workspace_inventory.py `
+  --workspace-id <workspace-id-1> `
+  --workspace-id <workspace-id-2> `
+  --output selected-workspaces.json
+```
+
+Capacities, domains, and deployment pipelines require additional scopes. Include
+them only when the signed-in identity has those permissions:
+
+```powershell
+python .\examples\export_workspace_inventory.py --include-platform-resources
+```
+
+This inventory captures the complete metadata exposed by the documented APIs. It
+does not represent capacity utilization metrics, audit events, gateway data
+sources, or pipeline activity runs, which use separate APIs, permissions, and
+query parameters. Install development tools with `python -m pip install -e ".[dev]"` when
 running the checks below.
 
 ## Authentication
