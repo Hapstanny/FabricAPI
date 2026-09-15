@@ -181,6 +181,22 @@ def test_queries_pipeline_activity_runs() -> None:
     assert b'"lastUpdatedAfter":"2026-09-14T00:00:00.000Z"' in requests[0].content
 
 
+def test_pipeline_activity_runs_reject_naive_timestamps_with_generic_message() -> None:
+    with (
+        FabricClient(
+            FakeCredential(),
+            transport=httpx.MockTransport(lambda _: httpx.Response(200, json=[])),
+        ) as client,
+        pytest.raises(ActivityWindowError, match=r"^timestamps must include a UTC offset$"),
+    ):
+        client.query_pipeline_activity_runs(
+            "workspace",
+            "job",
+            last_updated_after=datetime(2026, 9, 14),
+            last_updated_before=datetime(2026, 9, 15, tzinfo=timezone.utc),
+        )
+
+
 def test_activity_events_use_power_bi_scope_and_encoded_quoted_dates() -> None:
     credential = FakeCredential()
     requests: list[httpx.Request] = []

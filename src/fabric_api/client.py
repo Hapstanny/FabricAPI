@@ -353,7 +353,7 @@ def _api_error(response: httpx.Response) -> ApiError:
 
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
-        raise ActivityWindowError("activity-events timestamps must include a UTC offset")
+        raise ActivityWindowError("timestamps must include a UTC offset")
     return value.astimezone(timezone.utc)
 
 
