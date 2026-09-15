@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterator, Mapping
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import requests
@@ -78,20 +80,33 @@ class RestClient:
                     return response.json() if response.content else {}
                 if response.status_code not in {429, 500, 502, 503, 504} or attempt == self.retries:
                     raise RestApiError(response)
-                retry_after = response.headers.get("Retry-After")
-                delay = min(
-                    float(retry_after) if retry_after and retry_after.isdigit() else 2**attempt,
-                    self.max_retry_delay,
-                )
+                delay = self._retry_delay(response.headers.get("Retry-After"), attempt)
             time.sleep(delay)
         raise AssertionError("unreachable")
+
+    def _retry_delay(self, retry_after: str | None, attempt: int) -> float:
+        if retry_after:
+            try:
+                delay = float(retry_after)
+            except ValueError:
+                try:
+                    delay = (parsedate_to_datetime(retry_after) - datetime.now(UTC)).total_seconds()
+                except (TypeError, ValueError):
+                    delay = 2**attempt
+        else:
+            delay = 2**attempt
+        return min(max(0, delay), self.max_retry_delay)
 
     def list_pages(
         self, path: str, *, params: Mapping[str, str] | None = None
     ) -> Iterator[dict[str, Any]]:
         next_url: str | None = path
         next_params = params
+        seen_urls: set[str] = set()
         while next_url:
+            if next_url in seen_urls:
+                raise ValueError(f"Repeated pagination URL: {next_url}")
+            seen_urls.add(next_url)
             page = self.request("GET", next_url, params=next_params)
             yield page
             next_url = page.get("continuationUri") or page.get("@odata.nextLink")

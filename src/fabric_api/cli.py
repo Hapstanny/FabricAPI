@@ -34,30 +34,32 @@ def main() -> None:
             command.add_argument(arg, nargs=nargs)
     args = parser.parse_args()
     credential = credential_from_environment(args.interactive)
-    fabric, power_bi = (
-        FabricClient(credential, args.fabric_url),
-        PowerBIClient(credential, args.powerbi_url),
-    )
     result: Iterable[dict[str, Any]]
     match args.command:
         case "workspaces":
-            result = fabric.workspaces()
+            result = FabricClient(credential, args.fabric_url).workspaces()
         case "capacities":
-            result = fabric.capacities()
+            result = FabricClient(credential, args.fabric_url).capacities()
         case "domains":
-            result = fabric.domains()
+            result = FabricClient(credential, args.fabric_url).domains()
         case "deployment-pipelines":
-            result = fabric.deployment_pipelines()
+            result = FabricClient(credential, args.fabric_url).deployment_pipelines()
         case "items":
-            result = fabric.items(args.workspace_id, args.item_type)
+            result = FabricClient(credential, args.fabric_url).items(
+                args.workspace_id, args.item_type
+            )
         case "pipeline-runs":
-            result = fabric.pipeline_runs(args.workspace_id, args.pipeline_id)
+            result = FabricClient(credential, args.fabric_url).pipeline_runs(
+                args.workspace_id, args.pipeline_id
+            )
         case "gateways":
-            result = power_bi.gateways()
+            result = PowerBIClient(credential, args.powerbi_url).gateways()
         case "data-sources":
-            result = power_bi.data_sources(args.gateway_id)
+            result = PowerBIClient(credential, args.powerbi_url).data_sources(args.gateway_id)
         case "activity-events":
-            result = power_bi.activity_events(args.start, args.end)
+            result = PowerBIClient(credential, args.powerbi_url).activity_events(
+                args.start, args.end
+            )
         case _:
             raise AssertionError("unreachable")
     print(json.dumps(list(result), indent=2))

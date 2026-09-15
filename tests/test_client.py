@@ -113,6 +113,20 @@ def test_api_error_retains_response_and_retry_delay_is_bounded(
     assert error.value.response is not None
 
 
+def test_rejects_repeated_pagination_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = requests.Session()
+    monkeypatch.setattr(
+        session,
+        "request",
+        lambda *args, **kwargs: response(
+            200, {"value": [], "continuationUri": "https://example.test/v1/workspaces"}
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Repeated pagination URL"):
+        list(FabricClient(Credential(), "https://example.test/v1", session=session).workspaces())
+
+
 @pytest.mark.parametrize(
     ("operation", "expected_path"),
     [
