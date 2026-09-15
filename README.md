@@ -20,13 +20,36 @@ The examples intentionally do not guess endpoint paths. Most Fabric workloads ar
 
 Python 3.10 or newer is required.
 
+Open PowerShell, change to the cloned repository folder (the folder containing
+`pyproject.toml`), and run the one-time setup:
+
 ```powershell
+cd C:\path\to\FabricAPI
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e .
 ```
 
-Copy `.env.example` values into your shell or preferred secret store. The CLI does not load `.env` files automatically.
+`pip install -e .` registers the `fabric-api` command in the active virtual
+environment. After installation, `fabric-api` works from any folder while that
+environment is active; you do not have to remain in the repository folder.
+
+In each new PowerShell window, either return to the repository and reactivate the
+environment:
+
+```powershell
+cd C:\path\to\FabricAPI
+.\.venv\Scripts\Activate.ps1
+```
+
+or call the executable by its full path:
+
+```powershell
+C:\path\to\FabricAPI\.venv\Scripts\fabric-api.exe workspaces
+```
+
+Copy `.env.example` values into your shell or preferred secret store. The CLI
+does not load `.env` files automatically.
 
 ## Quick start
 
@@ -145,10 +168,29 @@ Fabric tokens use `https://api.fabric.microsoft.com/.default`. Power BI tokens u
 
 ## CLI examples
 
+Values in angle brackets are placeholders. Do not type the angle brackets. First
+list workspaces and copy the `id` value you want:
+
 ```powershell
 # Fabric Core APIs
 fabric-api workspaces
-fabric-api items <workspace-id>
+```
+
+For example, if `fabric-api workspaces` returns workspace ID
+`cfafbeb1-8037-4d0c-896e-a46fb27ff229`, list all its items with:
+
+```powershell
+fabric-api items cfafbeb1-8037-4d0c-896e-a46fb27ff229
+```
+
+The command calls
+`GET https://api.fabric.microsoft.com/v1/workspaces/{workspaceId}/items`,
+automatically follows all continuation pages, and prints the combined JSON
+results. The signed-in identity must have access to that workspace.
+
+Additional examples:
+
+```powershell
 fabric-api items <workspace-id> --type Lakehouse
 fabric-api item <workspace-id> <item-id>
 
