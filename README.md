@@ -45,8 +45,75 @@ python .\examples\list_workspaces.py
 ```
 
 It lists only workspaces the signed-in identity can access and does not modify tenant
-resources. Install development tools with `python -m pip install -e ".[dev]"` when
-running the checks below.
+resources.
+
+To capture a consolidated inventory of every accessible workspace and every item in
+each workspace:
+
+```powershell
+python .\examples\export_workspace_inventory.py
+```
+
+The command writes `fabric-workspace-inventory.json` with:
+
+- the complete workspace payload returned by the Workspaces API;
+- the complete item payload returned for every workspace;
+- a flattened `rows` collection with workspace, capacity, and item fields; and
+- an explicit `errors` collection if an individual workspace cannot be read.
+
+Limit the export to a selected list of workspaces by repeating `--workspace-id`:
+
+```powershell
+python .\examples\export_workspace_inventory.py `
+  --workspace-id <workspace-id-1> `
+  --workspace-id <workspace-id-2> `
+  --output selected-workspaces.json
+```
+
+Capacities, domains, and deployment pipelines require additional scopes. Include
+them only when the signed-in identity has those permissions:
+
+```powershell
+python .\examples\export_workspace_inventory.py --include-platform-resources
+```
+
+This inventory captures the complete metadata exposed by the documented APIs. It
+does not represent capacity utilization metrics, gateway data sources, or pipeline
+activity runs, which use separate APIs, permissions, and query parameters.
+
+### Include tenant audit/activity events
+
+Add a UTC time window to include Power BI Admin activity events in the same JSON
+file:
+
+```powershell
+python .\examples\export_workspace_inventory.py `
+  --activity-start 2026-09-14T00:00:00Z `
+  --activity-end 2026-09-14T23:59:59Z `
+  --output workspace-items-and-activities.json
+```
+
+The activity window must be within one UTC day and within the preceding 28 days.
+The signed-in identity must be a Fabric administrator with `Tenant.Read.All` or
+`Tenant.ReadWrite.All`, or a service principal enabled for read-only admin APIs.
+When `--workspace-id` is supplied, the exporter keeps only activity events whose
+`WorkspaceId` matches the selected workspaces. Without `--workspace-id`, it
+captures all activity events returned for the tenant and time window.
+If the separate Power BI token or admin API call fails, the exporter still writes
+the workspace/item inventory and records the activity failure in both
+`activityEvents.error` and the top-level `errors` collection.
+
+Pipeline activity runs are not tenant-wide audit events. They require a known
+pipeline job instance ID and remain available through:
+
+```powershell
+fabric-api activity-runs <workspace-id> <job-instance-id> `
+  --updated-after 2026-09-14T00:00:00Z `
+  --updated-before 2026-09-15T00:00:00Z
+```
+
+Install development tools with `python -m pip install -e ".[dev]"` when running
+the checks below.
 
 ## Authentication
 
