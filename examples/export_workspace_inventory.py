@@ -9,7 +9,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fabric_api import ApiError, FabricClient, TokenCredentialFactory
+from azure.core.exceptions import AzureError
+
+from fabric_api import ApiError, FabricClient, PowerBIClient, TokenCredentialFactory
 
 
 def collect_inventory(
@@ -64,6 +66,28 @@ def collect_inventory(
     return result
 
 
+def collect_activity_events(
+    client: PowerBIClient,
+    *,
+    start: datetime,
+    end: datetime,
+    workspace_ids: set[str] | None = None,
+) -> dict[str, Any]:
+    """Collect tenant activity events and optionally retain selected workspaces."""
+    events = client.list_activity_events(start, end)
+    if workspace_ids is not None:
+        events = [
+            event
+            for event in events
+            if str(event.get("WorkspaceId", event.get("workspaceId", ""))) in workspace_ids
+        ]
+    return {
+        "startDateTime": start.isoformat(),
+        "endDateTime": end.isoformat(),
+        "events": events,
+    }
+
+
 def _flatten_items(
     workspace: Mapping[str, Any],
     items: Sequence[Any],
@@ -116,6 +140,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Also request capacities, domains, and deployment pipelines.",
     )
     parser.add_argument(
+        "--activity-start",
+        type=_parse_datetime,
+        help="Include tenant audit events starting at this ISO 8601 UTC timestamp.",
+    )
+    parser.add_argument(
+        "--activity-end",
+        type=_parse_datetime,
+        help="Include tenant audit events ending at this ISO 8601 UTC timestamp.",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path("fabric-workspace-inventory.json"),
@@ -125,14 +159,41 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if bool(args.activity_start) != bool(args.activity_end):
+        parser.error("--activity-start and --activity-end must be provided together")
+
     credential = TokenCredentialFactory.from_environment().create()
+    workspace_ids = set(args.workspace_ids) if args.workspace_ids else None
     with FabricClient(credential, timeout=30, max_retries=2) as client:
         inventory = collect_inventory(
             client,
-            workspace_ids=set(args.workspace_ids) if args.workspace_ids else None,
+            workspace_ids=workspace_ids,
             include_platform_resources=args.include_platform_resources,
         )
+    if args.activity_start and args.activity_end:
+        try:
+            with PowerBIClient(credential, timeout=30, max_retries=2) as client:
+                inventory["activityEvents"] = collect_activity_events(
+                    client,
+                    start=args.activity_start,
+                    end=args.activity_end,
+                    workspace_ids=workspace_ids,
+                )
+        except (ApiError, AzureError) as error:
+            inventory["activityEvents"] = {
+                "startDateTime": args.activity_start.isoformat(),
+                "endDateTime": args.activity_end.isoformat(),
+                "events": [],
+                "error": str(error),
+            }
+            inventory["errors"].append(
+                {
+                    "scope": "activityEvents",
+                    "error": str(error),
+                }
+            )
 
     args.output.write_text(
         json.dumps(inventory, indent=2, default=str),
@@ -146,6 +207,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Completed with {len(inventory['errors'])} workspace errors.")
         return 1
     return 0
+
+
+def _parse_datetime(value: str) -> datetime:
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "expected an ISO 8601 timestamp with an offset, for example 2026-09-14T00:00:00Z"
+        ) from error
+    if parsed.tzinfo is None:
+        raise argparse.ArgumentTypeError("timestamp must include a UTC offset")
+    return parsed
 
 
 if __name__ == "__main__":

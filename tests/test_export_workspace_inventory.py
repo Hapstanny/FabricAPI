@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from typing import Any
 
-from examples.export_workspace_inventory import collect_inventory
+from examples.export_workspace_inventory import (
+    build_parser,
+    collect_activity_events,
+    collect_inventory,
+)
 from fabric_api.models import FabricItem
 
 
@@ -39,6 +44,19 @@ class FakeFabricClient:
         ]
 
 
+class FakePowerBIClient:
+    def list_activity_events(
+        self,
+        start: datetime,
+        end: datetime,
+    ) -> list[Mapping[str, Any]]:
+        return [
+            {"Id": "one", "WorkspaceId": "workspace-one", "Activity": "ViewReport"},
+            {"Id": "two", "WorkspaceId": "workspace-two", "Activity": "RefreshDataset"},
+            {"Id": "three", "Activity": "GetSnapshots"},
+        ]
+
+
 def test_collect_inventory_preserves_raw_payloads_and_flattened_rows() -> None:
     inventory = collect_inventory(FakeFabricClient())  # type: ignore[arg-type]
 
@@ -57,3 +75,31 @@ def test_collect_inventory_can_limit_workspaces() -> None:
     )
 
     assert [entry["workspace"]["id"] for entry in inventory["workspaces"]] == ["workspace-two"]
+
+
+def test_collect_activity_events_can_filter_selected_workspaces() -> None:
+    start = datetime(2026, 9, 14, tzinfo=timezone.utc)
+    end = datetime(2026, 9, 14, 23, 59, 59, tzinfo=timezone.utc)
+
+    result = collect_activity_events(
+        FakePowerBIClient(),  # type: ignore[arg-type]
+        start=start,
+        end=end,
+        workspace_ids={"workspace-two"},
+    )
+
+    assert [event["Id"] for event in result["events"]] == ["two"]
+
+
+def test_activity_timestamp_arguments_parse_utc_values() -> None:
+    args = build_parser().parse_args(
+        [
+            "--activity-start",
+            "2026-09-14T00:00:00Z",
+            "--activity-end",
+            "2026-09-14T23:59:59Z",
+        ]
+    )
+
+    assert args.activity_start.tzinfo is not None
+    assert args.activity_end.tzinfo is not None
