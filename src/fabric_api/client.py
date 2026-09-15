@@ -302,8 +302,13 @@ def _retry_delay(response: httpx.Response, attempt: int) -> float:
         try:
             return max(0.0, float(retry_after))
         except ValueError:
-            parsed = email.utils.parsedate_to_datetime(retry_after)
+            try:
+                parsed = email.utils.parsedate_to_datetime(retry_after)
+            except (TypeError, ValueError, OverflowError):
+                parsed = None
             if parsed is not None:
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
                 seconds = (parsed - datetime.now(timezone.utc)).total_seconds()
                 return max(0.0, seconds)
     return _exponential_delay(attempt)

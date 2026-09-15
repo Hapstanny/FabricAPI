@@ -6,7 +6,13 @@ import httpx
 import pytest
 from azure.core.credentials import AccessToken
 
-from fabric_api.client import FABRIC_SCOPE, POWER_BI_SCOPE, FabricClient, PowerBIClient
+from fabric_api.client import (
+    FABRIC_SCOPE,
+    POWER_BI_SCOPE,
+    FabricClient,
+    PowerBIClient,
+    _retry_delay,
+)
 from fabric_api.errors import ActivityWindowError, ApiError
 
 
@@ -85,6 +91,18 @@ def test_retries_retryable_response_and_honors_retry_after() -> None:
 
     assert attempts == 2
     assert delays == [2.0]
+
+
+def test_invalid_retry_after_uses_exponential_fallback() -> None:
+    response = httpx.Response(429, headers={"Retry-After": "not a date"})
+
+    assert 1.0 <= _retry_delay(response, attempt=0) <= 1.25
+
+
+def test_naive_retry_after_date_is_treated_as_utc() -> None:
+    response = httpx.Response(429, headers={"Retry-After": "Sun, 06 Nov 1994 08:49:37"})
+
+    assert _retry_delay(response, attempt=0) == 0.0
 
 
 def test_retries_transport_error_then_succeeds() -> None:
