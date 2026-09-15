@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterable
 from typing import Any
 
@@ -28,7 +29,7 @@ def response(
 ) -> requests.Response:
     value = requests.Response()
     value.status_code, value.url = status, url
-    value._content = __import__("json").dumps(payload).encode()
+    value._content = json.dumps(payload).encode()
     return value
 
 

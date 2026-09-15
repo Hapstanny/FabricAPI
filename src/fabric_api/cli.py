@@ -30,7 +30,7 @@ def main() -> None:
     }.items():
         command = sub.add_parser(name)
         for arg in command_args:
-            command.add_argument(arg)
+            command.add_argument(arg, nargs="?" if arg == "item_type" else None)
     args = parser.parse_args()
     credential = credential_from_environment(args.interactive)
     fabric, power_bi = (

@@ -30,5 +30,8 @@ def test_uses_default_credential_when_service_principal_is_incomplete(
     assert isinstance(credential_from_environment(), DefaultAzureCredential)
 
 
-def test_uses_interactive_credential_when_requested() -> None:
+def test_uses_interactive_credential_when_requested(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AZURE_TENANT_ID", raising=False)
+    monkeypatch.delenv("AZURE_CLIENT_ID", raising=False)
+    monkeypatch.delenv("AZURE_CLIENT_SECRET", raising=False)
     assert isinstance(credential_from_environment(interactive=True), InteractiveBrowserCredential)

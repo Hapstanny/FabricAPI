@@ -57,9 +57,9 @@ class RestClient:
             if path_or_url.startswith(("http://", "https://"))
             else f"{self.base_url}/{path_or_url.lstrip('/')}"
         )
-        token = self.credential.get_token(self.audience)
-        headers = {"Authorization": "Bearer " + token.token}
         for attempt in range(self.retries + 1):
+            token = self.credential.get_token(self.audience)
+            headers = {"Authorization": "Bearer " + token.token}
             try:
                 response = self.session.request(
                     method, url, headers=headers, params=params, json=json, timeout=self.timeout
