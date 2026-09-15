@@ -20,6 +20,10 @@ def test_generic_items_accepts_unknown_future_type() -> None:
     assert args.item_type == "FutureItem"
 
 
+def test_datamarts_shortcut_is_not_advertised() -> None:
+    assert "datamarts" not in ITEM_COMMANDS
+
+
 def test_auth_configuration_error_is_reported_as_json(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

@@ -76,7 +76,6 @@ fabric-api kql-databases <workspace-id>
 fabric-api kql-querysets <workspace-id>
 fabric-api environments <workspace-id>
 fabric-api dashboards <workspace-id>
-fabric-api datamarts <workspace-id>
 
 # Fabric platform resources
 fabric-api capacities
@@ -132,7 +131,8 @@ Fabric Data Factory activity runs are separately available only in the context o
 
 ## Coverage and limitations
 
-- Lakehouses, warehouses, semantic models, dataflows, eventhouses, eventstreams, KQL databases, KQL querysets, environments, dashboards, and datamarts are demonstrated through the Fabric Items API. The CLI passes the item type exactly as documented/configured and the generic `items --type` option supports additional current and future item types.
+- Lakehouses, warehouses, semantic models, dataflows, eventhouses, eventstreams, KQL databases, KQL querysets, environments, and dashboards are demonstrated through the Fabric Items API. The CLI passes the item type exactly as documented/configured and the generic `items --type` option supports additional current and future item types.
+- Datamart surfaces are not demonstrated because they are not supported by the Fabric Items API across tenants.
 - Capacity metadata is exposed by the Fabric Capacities API. Detailed capacity utilization metrics are not exposed by that endpoint. Use the officially supported Microsoft Fabric Capacity Metrics app or documented monitoring experiences; this repository does not invent a capacity-metrics REST path.
 - Datasources and gateways are Power BI REST resources, not Fabric Core item endpoints.
 - Some item types have additional workload-specific create/update/definition/job APIs. This example focuses on safe discovery and retrieval and leaves those operations to their individual official contracts.

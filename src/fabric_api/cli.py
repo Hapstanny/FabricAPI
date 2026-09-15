@@ -25,7 +25,6 @@ ITEM_COMMANDS: Mapping[str, str] = {
     "kql-querysets": "KQLQueryset",
     "environments": "Environment",
     "dashboards": "Dashboard",
-    "datamarts": "Datamart",
 }
 
 
