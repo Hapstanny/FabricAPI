@@ -23,10 +23,30 @@ Python 3.10 or newer is required.
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
+python -m pip install -e .
 ```
 
 Copy `.env.example` values into your shell or preferred secret store. The CLI does not load `.env` files automatically.
+
+## Quick start
+
+With an existing Azure CLI, Visual Studio Code, or other `DefaultAzureCredential`
+sign-in, the smallest read-only example is:
+
+```powershell
+$env:FABRIC_AUTH_MODE = "default"
+fabric-api workspaces
+```
+
+The same call is available as a directly runnable Python example:
+
+```powershell
+python .\examples\list_workspaces.py
+```
+
+It lists only workspaces the signed-in identity can access and does not modify tenant
+resources. Install development tools with `python -m pip install -e ".[dev]"` when
+running the checks below.
 
 ## Authentication
 
