@@ -41,6 +41,7 @@ class RestClient:
             raise ValueError("max_retries cannot be negative")
         self._credential = credential
         self._scope = scope
+        self._access_token: AccessToken | None = None
         self._max_retries = max_retries
         self._sleep = sleep
         self._client = httpx.Client(
@@ -89,7 +90,7 @@ class RestClient:
         json: object | None = None,
     ) -> object:
         for attempt in range(self._max_retries + 1):
-            token: AccessToken = self._credential.get_token(self._scope)
+            token = self._get_access_token()
             try:
                 response = self._client.request(
                     method,
@@ -114,6 +115,11 @@ class RestClient:
             return {}
         return response.json()
 
+    def _get_access_token(self) -> AccessToken:
+        if self._access_token is None or self._access_token.expires_on <= time.time() + 60:
+            self._access_token = self._credential.get_token(self._scope)
+        return self._access_token
+
     def iter_pages(
         self,
         path_or_url: str,
@@ -123,13 +129,13 @@ class RestClient:
     ) -> Iterator[Page]:
         next_url: str | None = path_or_url
         original_params = dict(params or {})
-        next_params = dict(original_params)
+        next_params: Mapping[str, object] | None = dict(original_params)
         while next_url:
             page = Page.from_dict(self.get(next_url, params=next_params), value_key=value_key)
             yield page
-            next_params = {}
             if page.continuation_uri:
                 next_url = page.continuation_uri
+                next_params = None
             elif page.continuation_token:
                 next_url = path_or_url
                 next_params = {

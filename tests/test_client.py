@@ -66,7 +66,7 @@ def test_lists_items_with_type_and_follows_continuation_uri() -> None:
     assert [item.id for item in items] == ["one", "two"]
     assert requests[0].url.params["type"] == "Lakehouse"
     assert str(requests[1].url) == "https://api.fabric.microsoft.com/v1/next-page"
-    assert credential.scopes == [FABRIC_SCOPE, FABRIC_SCOPE]
+    assert credential.scopes == [FABRIC_SCOPE]
     assert requests[0].headers["Authorization"].startswith("Bearer ")
     assert requests[0].headers["Authorization"].endswith("test-token")
 
@@ -222,6 +222,42 @@ def test_activity_events_use_power_bi_scope_and_encoded_quoted_dates() -> None:
     assert credential.scopes == [POWER_BI_SCOPE]
     assert requests[0].url.params["startDateTime"] == "'2026-09-14T00:00:00.000Z'"
     assert requests[0].url.params["endDateTime"] == "'2026-09-14T23:59:59.000Z'"
+
+
+def test_activity_events_follow_regional_continuation_uri_with_cached_token() -> None:
+    credential = FakeCredential()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "activityEventEntities": [{"Id": "one"}],
+                    "continuationToken": "token%2Bvalue%3D%3D",
+                    "continuationUri": (
+                        "https://regional.example/v1.0/myorg/admin/activityevents"
+                        "?continuationToken='token%2Bvalue%3D%3D'"
+                    ),
+                },
+            )
+        return httpx.Response(200, json={"activityEventEntities": [{"Id": "two"}]})
+
+    with PowerBIClient(
+        credential,
+        transport=httpx.MockTransport(handler),
+        now=lambda: datetime(2026, 9, 15, tzinfo=timezone.utc),
+    ) as client:
+        result = client.list_activity_events(
+            datetime(2026, 9, 14, 0, 0, tzinfo=timezone.utc),
+            datetime(2026, 9, 14, 23, 59, 59, tzinfo=timezone.utc),
+        )
+
+    assert [event["Id"] for event in result] == ["one", "two"]
+    assert requests[1].url.host == "regional.example"
+    assert requests[1].url.params["continuationToken"] == "'token+value=='"
+    assert credential.scopes == [POWER_BI_SCOPE]
 
 
 def test_activity_events_reject_cross_day_window() -> None:
