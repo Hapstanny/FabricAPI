@@ -6,7 +6,9 @@ param(
 
     [Parameter(Mandatory)]
     [ValidateNotNullOrEmpty()]
-    [string] $ClientId
+    [string] $ClientId,
+
+    [switch] $SkipLogin
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,10 +20,12 @@ if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
     throw "Azure CLI (az) is required. Install it from https://aka.ms/installazurecliwindows."
 }
 
-Write-Host "Signing in to tenant $TenantId..."
-az login --tenant $TenantId --allow-no-subscriptions --output none
-if ($LASTEXITCODE -ne 0) {
-    throw "Azure CLI sign-in failed."
+if (-not $SkipLogin) {
+    Write-Host "Signing in to tenant $TenantId..."
+    az login --tenant $TenantId --allow-no-subscriptions --output none
+    if ($LASTEXITCODE -ne 0) {
+        throw "Azure CLI sign-in failed."
+    }
 }
 
 $signedInTenant = az account show --query tenantId --output tsv
