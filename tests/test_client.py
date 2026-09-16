@@ -239,6 +239,36 @@ def test_activity_events_use_power_bi_scope_and_encoded_quoted_dates() -> None:
     assert requests[0].url.params["endDateTime"] == "'2026-09-14T23:59:59.000Z'"
 
 
+def test_activity_events_query_multiple_exact_activity_filters() -> None:
+    credential = FakeCredential()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={"activityEventEntities": [{"Activity": request.url.params["$filter"]}]},
+        )
+
+    with PowerBIClient(
+        credential,
+        transport=httpx.MockTransport(handler),
+        now=lambda: datetime(2026, 9, 15, tzinfo=timezone.utc),
+    ) as client:
+        result = client.list_activity_events(
+            datetime(2026, 9, 14, 0, 0, tzinfo=timezone.utc),
+            datetime(2026, 9, 14, 23, 59, 59, tzinfo=timezone.utc),
+            activities=("FabricCopilotSessionCreated", "FabricCopilotSessionMessageSent"),
+            user_id="o'hara@example.com",
+        )
+
+    assert len(result) == 2
+    assert [request.url.params["$filter"] for request in requests] == [
+        "Activity eq 'FabricCopilotSessionCreated' and UserId eq 'o''hara@example.com'",
+        "Activity eq 'FabricCopilotSessionMessageSent' and UserId eq 'o''hara@example.com'",
+    ]
+
+
 def test_activity_events_follow_regional_continuation_uri_with_cached_token() -> None:
     credential = FakeCredential()
     requests: list[httpx.Request] = []

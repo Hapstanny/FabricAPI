@@ -21,8 +21,9 @@ def _records() -> tuple[AuditLogRecord, ...]:
                 "objectId": "report-1",
                 "auditData": {
                     "Activity": "CopilotInteraction",
+                    "AppIdentity": "Copilot.Fabric.CopilotforPowerBI",
                     "CopilotEventData": {
-                        "AppHost": "PowerBI",
+                        "AppHost": "Power BI",
                         "Messages": [
                             {"Id": "prompt-1", "isPrompt": True},
                             {"Id": "response-1", "isPrompt": False},
@@ -63,6 +64,11 @@ def test_governance_analysis_counts_copilot_and_power_bi_dimensions() -> None:
     ]
     assert analysis["copilot-messages"][0]["promptMessageCount"] == 1
     assert analysis["copilot-messages"][0]["responseMessageCount"] == 1
+    assert {
+        "dimension": "appIdentity",
+        "value": "Copilot.Fabric.CopilotforPowerBI",
+        "count": 1,
+    } in analysis["copilot-dimensions"]
     assert any(row["sensitivityLabelId"] == "label-1" for row in analysis["copilot-resources"])
     assert sum(row["count"] for row in analysis["powerbi-fabric-trends"]) == 2
     assert analysis["audit-records"][0]["auditData"]
@@ -85,12 +91,13 @@ def test_export_retains_raw_records_and_writes_all_summaries(tmp_path: Path) -> 
     assert manifest["complete"] is False
     assert manifest["recordCount"] == 2
     raw = json.loads((tmp_path / "audit-records.json").read_text(encoding="utf-8"))
-    assert raw["records"][0]["auditData"]["CopilotEventData"]["AppHost"] == "PowerBI"
+    assert raw["records"][0]["auditData"]["CopilotEventData"]["AppHost"] == "Power BI"
     assert raw["errors"] == ["A later page failed"]
     assert len((tmp_path / "audit-records.jsonl").read_text(encoding="utf-8").splitlines()) == 2
     with (tmp_path / "audit-records.csv").open(encoding="utf-8", newline="") as stream:
         rows = list(csv.DictReader(stream))
     assert rows[0]["promptMessageCount"] == "1"
+    assert rows[0]["appIdentity"] == "Copilot.Fabric.CopilotforPowerBI"
     assert set(manifest["files"]) >= {
         "manifest.json",
         "copilot-daily.csv",

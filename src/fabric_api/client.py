@@ -5,7 +5,7 @@ from __future__ import annotations
 import email.utils
 import random
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -322,6 +322,9 @@ class PowerBIClient(RestClient):
         self,
         start: datetime,
         end: datetime,
+        *,
+        activities: Sequence[str] = (),
+        user_id: str | None = None,
     ) -> list[Mapping[str, Any]]:
         start_utc = _as_utc(start)
         end_utc = _as_utc(end)
@@ -332,15 +335,31 @@ class PowerBIClient(RestClient):
         if start_utc < self._now().astimezone(timezone.utc) - timedelta(days=28):
             raise ActivityWindowError("activity-events start cannot be more than 28 days old")
 
-        params = {
+        base_params = {
             "startDateTime": f"'{_format_power_bi_datetime(start_utc)}'",
             "endDateTime": f"'{_format_power_bi_datetime(end_utc)}'",
         }
-        return self.list_all(
-            "/v1.0/myorg/admin/activityevents",
-            params=params,
-            value_key="activityEventEntities",
+        activity_filters = tuple(
+            dict.fromkeys(activity.strip() for activity in activities if activity)
         )
+        events: list[Mapping[str, Any]] = []
+        for activity in activity_filters or (None,):
+            params = dict(base_params)
+            filters: list[str] = []
+            if activity:
+                filters.append(f"Activity eq '{_escape_odata_string(activity)}'")
+            if user_id:
+                filters.append(f"UserId eq '{_escape_odata_string(user_id)}'")
+            if filters:
+                params["$filter"] = " and ".join(filters)
+            events.extend(
+                self.list_all(
+                    "/v1.0/myorg/admin/activityevents",
+                    params=params,
+                    value_key="activityEventEntities",
+                )
+            )
+        return events
 
 
 def _retry_delay(response: httpx.Response, attempt: int) -> float:
@@ -359,6 +378,10 @@ def _retry_delay(response: httpx.Response, attempt: int) -> float:
                 seconds = (parsed - datetime.now(timezone.utc)).total_seconds()
                 return max(0.0, seconds)
     return _exponential_delay(attempt)
+
+
+def _escape_odata_string(value: str) -> str:
+    return value.replace("'", "''")
 
 
 def _exponential_delay(attempt: int) -> float:

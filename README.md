@@ -109,6 +109,67 @@ fabric-api powerbi-usage `
   --output .\powerbi-usage
 ```
 
+As described in the Copilot usage governance guidance, Copilot usage can be derived
+from both the Power BI/Fabric Activity Events feed and Microsoft Purview Audit. They
+provide related but different records.
+
+Use the Power BI Admin Activity Events API to retrieve all five currently documented
+Fabric Copilot session activities in one command:
+
+```powershell
+fabric-api activity-events `
+  --start 2026-09-15T00:00:00Z `
+  --end 2026-09-15T23:59:59Z `
+  --fabric-copilot |
+  Set-Content -Encoding utf8 .\fabric-copilot-activity.json
+```
+
+The preset makes one API request for each exact documented `Activity` value and
+combines the returned events:
+
+- `FabricCopilotSessionCreated`
+- `FabricCopilotSessionDeleted`
+- `FabricCopilotSessionMessageSent`
+- `FabricCopilotSessionUpdated`
+- `FabricCopilotSessionStateUpdated`
+
+To retrieve only messages, or only one user's messages:
+
+```powershell
+fabric-api activity-events `
+  --start 2026-09-15T00:00:00Z `
+  --end 2026-09-15T23:59:59Z `
+  --activity FabricCopilotSessionMessageSent
+
+fabric-api activity-events `
+  --start 2026-09-15T00:00:00Z `
+  --end 2026-09-15T23:59:59Z `
+  --activity FabricCopilotSessionMessageSent `
+  --user analyst@contoso.com
+```
+
+The Activity Events API supports server-side equality filters for `Activity`,
+`UserId`, or both. Counting `FabricCopilotSessionMessageSent` by `UserId` provides
+active-user and interaction-volume reporting from Fabric activity logs. The command
+returns the complete event objects supplied by the API; available properties can
+vary by activity.
+
+Use Purview Audit separately for the cross-service `CopilotInteraction` records and
+governance metadata:
+
+```powershell
+fabric-api copilot-usage `
+  --start 2026-09-15T00:00:00Z `
+  --end 2026-09-16T00:00:00Z `
+  --output .\copilot-usage
+```
+
+Purview results can include `AppIdentity`
+`Copilot.Fabric.CopilotforPowerBI`, `AppHost`, message IDs/counts, contexts,
+accessed resources, and sensitivity-label identifiers. They don't necessarily
+contain prompt or response text. Use Activity Events for Fabric operational usage
+tracking and Purview for cross-service compliance and governance analysis.
+
 The equivalent directly runnable examples are:
 
 ```powershell
@@ -128,7 +189,8 @@ Each output directory contains:
 
 - `audit-records.json` with query state, collection errors, and every original record;
 - `audit-records.jsonl` with one unchanged original record per line;
-- `audit-records.csv` with selected flattened fields and serialized full audit data;
+- `audit-records.csv` with selected flattened fields, `AppIdentity`/`AppHost`, and
+  serialized full audit data;
 - Copilot daily active-user and interaction counts;
 - counts by user, service/workload, operation, and `CopilotEventData.AppHost`;
 - prompt/response **message counts** from `CopilotEventData.Messages/isPrompt`;

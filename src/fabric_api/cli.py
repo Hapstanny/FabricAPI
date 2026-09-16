@@ -31,6 +31,14 @@ ITEM_COMMANDS: Mapping[str, str] = {
     "dashboards": "Dashboard",
 }
 
+FABRIC_COPILOT_ACTIVITIES = (
+    "FabricCopilotSessionCreated",
+    "FabricCopilotSessionDeleted",
+    "FabricCopilotSessionMessageSent",
+    "FabricCopilotSessionUpdated",
+    "FabricCopilotSessionStateUpdated",
+)
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -90,6 +98,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     activity.add_argument("--start", required=True, type=_parse_datetime)
     activity.add_argument("--end", required=True, type=_parse_datetime)
+    activity.add_argument(
+        "--activity",
+        action="append",
+        default=[],
+        help="Exact Power BI/Fabric Activity value; repeat to query multiple activities",
+    )
+    activity.add_argument("--user", help="Filter by exact UserId")
+    activity.add_argument(
+        "--fabric-copilot",
+        action="store_true",
+        help="Query all documented Fabric Copilot session activities",
+    )
 
     purview = subparsers.add_parser(
         "purview-audit",
@@ -169,7 +189,15 @@ def _run(
                 return client.list_gateways()
             if args.command == "datasources":
                 return client.list_datasources(args.workspace_id, args.semantic_model_id)
-            return client.list_activity_events(args.start, args.end)
+            activities = list(args.activity)
+            if args.fabric_copilot:
+                activities.extend(FABRIC_COPILOT_ACTIVITIES)
+            return client.list_activity_events(
+                args.start,
+                args.end,
+                activities=tuple(activities),
+                user_id=args.user,
+            )
 
     with FabricClient(
         credential,

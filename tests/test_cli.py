@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from fabric_api.cli import ITEM_COMMANDS, build_parser, main
+from fabric_api.cli import FABRIC_COPILOT_ACTIVITIES, ITEM_COMMANDS, build_parser, main
 
 
 def test_item_shortcuts_are_registered() -> None:
@@ -22,6 +22,28 @@ def test_generic_items_accepts_unknown_future_type() -> None:
 
 def test_datamarts_shortcut_is_not_advertised() -> None:
     assert "datamarts" not in ITEM_COMMANDS
+
+
+def test_activity_events_accept_fabric_copilot_preset_and_exact_filters() -> None:
+    args = build_parser().parse_args(
+        [
+            "activity-events",
+            "--start",
+            "2026-09-15T00:00:00Z",
+            "--end",
+            "2026-09-15T23:59:59Z",
+            "--fabric-copilot",
+            "--activity",
+            "ViewReport",
+            "--user",
+            "analyst@example.com",
+        ]
+    )
+
+    assert args.fabric_copilot is True
+    assert args.activity == ["ViewReport"]
+    assert args.user == "analyst@example.com"
+    assert "FabricCopilotSessionMessageSent" in FABRIC_COPILOT_ACTIVITIES
 
 
 def test_purview_commands_parse_documented_filters() -> None:

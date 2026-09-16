@@ -26,6 +26,7 @@ CSV_FIELDS: Mapping[str, tuple[str, ...]] = {
         "objectId",
         "clientIp",
         "appHost",
+        "appIdentity",
         "promptMessageCount",
         "responseMessageCount",
         "unknownMessageCount",
@@ -87,6 +88,7 @@ def analyze_audit_records(records: Sequence[AuditLogRecord]) -> dict[str, list[d
         service = _record_service(record)
         operation = _record_operation(record)
         app_host = _text(_get(event_data, "AppHost", "appHost"))
+        app_identity = _text(_get(audit_data, "AppIdentity", "appIdentity"))
         daily_interactions[day] += 1
         if user:
             daily_users.setdefault(day, set()).add(user)
@@ -95,6 +97,7 @@ def analyze_audit_records(records: Sequence[AuditLogRecord]) -> dict[str, list[d
             ("service", service),
             ("operation", operation),
             ("appHost", app_host),
+            ("appIdentity", app_identity),
         ):
             dimensions[(dimension, value or "(unknown)")] += 1
 
@@ -290,6 +293,7 @@ def _flatten_record(record: AuditLogRecord) -> dict[str, Any]:
         "objectId": record.object_id or "",
         "clientIp": record.client_ip or "",
         "appHost": _text(_get(event_data, "AppHost", "appHost")),
+        "appIdentity": _text(_get(record.audit_data, "AppIdentity", "appIdentity")),
         "promptMessageCount": prompts,
         "responseMessageCount": responses,
         "unknownMessageCount": len(messages) - prompts - responses,
