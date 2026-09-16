@@ -170,6 +170,41 @@ accessed resources, and sensitivity-label identifiers. They don't necessarily
 contain prompt or response text. Use Activity Events for Fabric operational usage
 tracking and Purview for cross-service compliance and governance analysis.
 
+#### Fabric Data Agent audit coverage
+
+The `--fabric-copilot` Activity Events preset covers the five documented Fabric
+Copilot session operations listed above. It does **not** claim Fabric Data Agent
+coverage because Microsoft currently documents Data Agent interaction auditing
+through Microsoft Purview rather than as a corresponding set of Power BI Admin
+Activity Events operations.
+
+Fabric Data Agent audit logging is currently in preview. When the prerequisites are
+enabled, Purview creates `CopilotInteraction` audit records for Data Agent requests
+and responses. Collect those records with:
+
+```powershell
+fabric-api copilot-usage `
+  --start 2026-09-15T00:00:00Z `
+  --end 2026-09-16T00:00:00Z `
+  --output .\data-agent-audit
+```
+
+The command collects all Copilot interaction records. To create a Data Agent-focused
+CSV using the documented Purview application label:
+
+```powershell
+Import-Csv .\data-agent-audit\audit-records.csv |
+  Where-Object { $_.auditData -match "Fabric-Data Agent" } |
+  Export-Csv .\data-agent-audit\fabric-data-agent-interactions.csv -NoTypeInformation
+```
+
+Data Agent logging requires Purview Audit, the **DSPM for AI - Capture interactions
+for Copilot experiences** policy, and the Fabric tenant setting **Allow Microsoft
+Purview to secure AI interactions**. The raw export preserves every property
+returned by Microsoft Graph. Access to displayed prompt and response content remains
+subject to Purview roles, policy configuration, licensing, and the preview service's
+API behavior.
+
 The equivalent directly runnable examples are:
 
 ```powershell
