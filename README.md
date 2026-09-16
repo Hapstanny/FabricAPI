@@ -427,6 +427,10 @@ records:
 > uses the Power BI Admin Activity Events endpoint. It is separate from
 > `fabric-api copilot-usage`, which queries Microsoft Purview through Graph even
 > though both sources can contain an operation named `CopilotInteraction`.
+>
+> The start and end must have the **same UTC date**. For a full day, use
+> `00:00:00Z` through `23:59:59Z`. Unlike the Purview examples, do not use
+> `00:00:00Z` on the following day as the Activity Events end time.
 
 Retrieve all five currently documented Fabric Copilot session operations:
 
