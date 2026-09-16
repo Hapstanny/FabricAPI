@@ -6,6 +6,7 @@ import httpx
 import pytest
 from azure.core.credentials import AccessToken
 
+from fabric_api.errors import ApiError
 from fabric_api.models import AuditLogQueryFilters
 from fabric_api.purview import GRAPH_SCOPE, PurviewAuditClient
 
@@ -149,6 +150,31 @@ def test_query_poll_api_error_is_returned_as_incomplete() -> None:
     assert result.complete is False
     assert "status polling failed" in result.errors[0]
     assert "503 GET" in result.errors[0]
+
+
+def test_create_query_does_not_retry_non_idempotent_post() -> None:
+    requests = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal requests
+        requests += 1
+        return httpx.Response(
+            503,
+            json={"error": {"code": "Unavailable", "message": "Try later"}},
+        )
+
+    with (
+        PurviewAuditClient(
+            FakeCredential(),
+            transport=httpx.MockTransport(handler),
+            max_retries=4,
+            sleep=lambda _: None,
+        ) as client,
+        pytest.raises(ApiError, match="503 POST"),
+    ):
+        client.create_query(_filters())
+
+    assert requests == 1
 
 
 def test_query_filters_reject_naive_or_reversed_timestamps() -> None:

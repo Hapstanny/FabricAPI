@@ -140,8 +140,7 @@ To create both a delegated interactive app and a separate app-only service princ
   -TenantId "<tenant-id>" `
   -DisplayName "Fabric API Interactive CLI" `
   -CreateServicePrincipal `
-  -ServicePrincipalDisplayName "Fabric API Automation" `
-  -CreateClientSecret
+  -ServicePrincipalDisplayName "Fabric API Automation"
 ```
 
 > [!IMPORTANT]
@@ -158,17 +157,10 @@ The script:
 6. Optionally creates a separate confidential app and service principal.
 7. Adds application Microsoft Graph `AuditLogsQuery.Read.All` to that automation
    identity and verifies admin consent.
-8. Optionally creates a one-year client secret and prints both authentication
-   configurations.
 
-The interactive public client never receives a secret. `-CreateClientSecret` applies
-only to the separate automation app and requires `-CreateServicePrincipal`.
-
-> [!CAUTION]
-> A generated client secret is displayed once. Store it immediately in an approved
-> secret store, do not paste it into source files, and clear terminal transcripts or
-> logs that may have captured it. Omit `-CreateClientSecret` when using a certificate
-> or federated credential instead.
+The script does not create or print credentials. Configure the automation identity
+with a certificate, workload-identity federation, managed identity where applicable,
+or a separately managed client secret stored in an approved secret store.
 
 Then configure the CLI with the values printed by the script:
 
@@ -227,9 +219,9 @@ Reader** or **Audit Manager**:
 
 ### Service principal
 
-The combined setup command above can create a separate service principal, grant
-application `AuditLogsQuery.Read.All`, and optionally create a one-year client
-secret. To grant the application permission to an existing service-principal app:
+The combined setup command above can create a separate service principal and grant
+the exact application `AuditLogsQuery.Read.All` role. It does not create credentials.
+To grant the application permission to an existing service-principal app:
 
 ```powershell
 .\scripts\Grant-PurviewApplicationPermission.ps1 `
@@ -250,6 +242,13 @@ For Purview Audit Search, grant the service principal the Microsoft Graph
 **application** permission `AuditLogsQuery.Read.All` and tenant admin consent. The
 permission must show **Type: Application** and **Status: Granted for
 &lt;tenant&gt;**.
+
+Only **Application** permissions are included in a client-credential SPN token.
+`AuditLogsQuery.Read.All` authorizes audit queries across the supported Microsoft
+365 services used by these exports. Workload-specific permissions such as
+`AuditLogsQuery-Exchange.Read.All` are narrower alternatives, not additional
+requirements when `AuditLogsQuery.Read.All` is already granted. Delegated
+`AuditLog.Read.All` and `User.Read` entries do not authorize app-only requests.
 
 Azure subscription RBAC roles such as Reader or Contributor do not grant Microsoft
 365 unified audit-log access. Delegated `AuditLog.Read.All` is also a different
@@ -685,14 +684,18 @@ Graph Audit Search.
   spreadsheet formula execution.
 - Common audit-output directories are ignored by Git. Protect custom output paths
   and never commit audit exports.
-- Base URL overrides are intended for testing or sovereign-cloud routing and must be
-  absolute HTTPS URLs:
+- Base URL overrides are intended for controlled testing against compatible HTTPS
+  endpoints:
 
 ```powershell
 $env:FABRIC_API_BASE_URL = "https://api.fabric.microsoft.com"
 $env:POWER_BI_API_BASE_URL = "https://api.powerbi.com"
 $env:PURVIEW_GRAPH_BASE_URL = "https://graph.microsoft.com"
 ```
+
+These overrides do not by themselves configure a sovereign cloud. Token audiences,
+Azure authority hosts, and trusted continuation domains remain configured for the
+Microsoft public cloud.
 
 ## Troubleshooting
 

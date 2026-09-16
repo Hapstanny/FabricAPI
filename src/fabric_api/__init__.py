@@ -2,7 +2,12 @@
 
 from .auth import TokenCredentialFactory
 from .client import FabricClient, PowerBIClient
-from .errors import ApiError, AuthenticationConfigurationError, UnsafeRequestUrlError
+from .errors import (
+    ApiError,
+    AuthenticationConfigurationError,
+    FabricApiError,
+    UnsafeRequestUrlError,
+)
 from .governance import analyze_audit_records, export_audit_collection
 from .models import AuditCollectionResult, AuditLogQueryFilters, AuditLogRecord
 from .purview import PurviewAuditClient
@@ -13,6 +18,7 @@ __all__ = [
     "AuditLogRecord",
     "ApiError",
     "AuthenticationConfigurationError",
+    "FabricApiError",
     "FabricClient",
     "PowerBIClient",
     "PurviewAuditClient",

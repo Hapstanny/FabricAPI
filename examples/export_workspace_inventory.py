@@ -11,7 +11,7 @@ from typing import Any
 
 from azure.core.exceptions import AzureError
 
-from fabric_api import ApiError, FabricClient, PowerBIClient, TokenCredentialFactory
+from fabric_api import FabricApiError, FabricClient, PowerBIClient, TokenCredentialFactory
 
 
 def collect_inventory(
@@ -36,7 +36,7 @@ def collect_inventory(
         workspace_id = str(workspace["id"])
         try:
             items = client.list_items(workspace_id)
-        except ApiError as error:
+        except FabricApiError as error:
             errors.append(
                 {
                     "workspaceId": workspace_id,
@@ -119,7 +119,7 @@ def _collect_platform_resources(client: FabricClient) -> dict[str, object]:
     for name, operation in operations.items():
         try:
             resources[name] = operation()
-        except ApiError as error:
+        except FabricApiError as error:
             resources[name] = {"error": str(error)}
     return resources
 
@@ -181,7 +181,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     end=args.activity_end,
                     workspace_ids=workspace_ids,
                 )
-        except (ApiError, AzureError) as error:
+        except (AzureError, FabricApiError) as error:
             inventory["activityEvents"] = {
                 "startDateTime": args.activity_start.isoformat(),
                 "endDateTime": args.activity_end.isoformat(),

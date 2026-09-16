@@ -15,6 +15,92 @@ $ErrorActionPreference = "Stop"
 
 $graphAppId = "00000003-0000-0000-c000-000000000000"
 $permissionName = "AuditLogsQuery.Read.All"
+$visibilityAttempts = 6
+
+function Wait-ForServicePrincipal {
+    param(
+        [Parameter(Mandatory)]
+        [string] $ApplicationId,
+
+        [int] $MaxAttempts = $visibilityAttempts
+    )
+
+    for ($attempt = 0; $attempt -lt $MaxAttempts; $attempt++) {
+        $servicePrincipal = az ad sp show --id $ApplicationId --output json 2>$null |
+            ConvertFrom-Json
+        if ($LASTEXITCODE -eq 0 -and $servicePrincipal) {
+            return $servicePrincipal
+        }
+        if ($attempt -lt $MaxAttempts - 1) {
+            Start-Sleep -Seconds ([Math]::Pow(2, $attempt))
+        }
+    }
+    return $null
+}
+
+function Get-AppRoleAssignment {
+    param(
+        [Parameter(Mandatory)]
+        [string] $ClientServicePrincipalId,
+
+        [Parameter(Mandatory)]
+        [string] $ResourceServicePrincipalId,
+
+        [Parameter(Mandatory)]
+        [string] $AppRoleId
+    )
+
+    $response = az rest `
+        --method get `
+        --url "https://graph.microsoft.com/v1.0/servicePrincipals/$ClientServicePrincipalId/appRoleAssignments" `
+        --output json |
+        ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) {
+        throw "Application role assignments could not be inspected."
+    }
+    return $response.value |
+        Where-Object {
+            $_.resourceId -eq $ResourceServicePrincipalId -and
+            $_.appRoleId -eq $AppRoleId
+        } |
+        Select-Object -First 1
+}
+
+function Wait-ForAppRoleAssignment {
+    param(
+        [Parameter(Mandatory)]
+        [string] $ClientServicePrincipalId,
+
+        [Parameter(Mandatory)]
+        [string] $ResourceServicePrincipalId,
+
+        [Parameter(Mandatory)]
+        [string] $AppRoleId
+    )
+
+    for ($attempt = 0; $attempt -lt $visibilityAttempts; $attempt++) {
+        try {
+            $assignment = Get-AppRoleAssignment `
+                -ClientServicePrincipalId $ClientServicePrincipalId `
+                -ResourceServicePrincipalId $ResourceServicePrincipalId `
+                -AppRoleId $AppRoleId
+        }
+        catch {
+            if ($attempt -eq $visibilityAttempts - 1) {
+                throw
+            }
+            Start-Sleep -Seconds ([Math]::Pow(2, $attempt))
+            continue
+        }
+        if ($assignment) {
+            return $assignment
+        }
+        if ($attempt -lt $visibilityAttempts - 1) {
+            Start-Sleep -Seconds ([Math]::Pow(2, $attempt))
+        }
+    }
+    return $null
+}
 
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
     throw "Azure CLI (az) is required. Install it from https://aka.ms/installazurecliwindows."
@@ -78,41 +164,57 @@ else {
     }
 }
 
-$clientServicePrincipal = az ad sp show --id $ClientId --output json 2>$null |
-    ConvertFrom-Json
-if ($LASTEXITCODE -ne 0 -or -not $clientServicePrincipal) {
+$clientServicePrincipal = Wait-ForServicePrincipal -ApplicationId $ClientId -MaxAttempts 1
+if (-not $clientServicePrincipal) {
     Write-Host "Creating the enterprise application for app registration $ClientId..."
-    $clientServicePrincipal = az ad sp create --id $ClientId --output json |
-        ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0 -or -not $clientServicePrincipal) {
-        throw "Failed to create the enterprise application for '$ClientId'."
+    az ad sp create --id $ClientId --output none
+    $createExitCode = $LASTEXITCODE
+    $clientServicePrincipal = Wait-ForServicePrincipal -ApplicationId $ClientId
+    if (-not $clientServicePrincipal) {
+        if ($createExitCode -ne 0) {
+            throw "Failed to create the enterprise application for '$ClientId'."
+        }
+        throw "The enterprise application for '$ClientId' was not visible after bounded polling."
     }
 }
 
-Write-Host "Granting tenant-wide admin consent..."
-az ad app permission admin-consent --id $ClientId --output none
-if ($LASTEXITCODE -ne 0) {
-    throw "Admin consent failed. Run this script while signed in as a Global Administrator."
-}
-
-$assignmentResponse = az rest `
-    --method get `
-    --url "https://graph.microsoft.com/v1.0/servicePrincipals/$($clientServicePrincipal.id)/appRoleAssignments" `
-    --output json |
-    ConvertFrom-Json
-if ($LASTEXITCODE -ne 0) {
-    throw "Permission was configured, but its app-role assignment could not be verified."
-}
-
-$verifiedAssignment = $assignmentResponse.value |
-    Where-Object {
-        $_.resourceId -eq $graphServicePrincipal.id -and
-        $_.appRoleId -eq $appRole.id
-    } |
-    Select-Object -First 1
+$verifiedAssignment = Get-AppRoleAssignment `
+    -ClientServicePrincipalId $clientServicePrincipal.id `
+    -ResourceServicePrincipalId $graphServicePrincipal.id `
+    -AppRoleId $appRole.id
 
 if (-not $verifiedAssignment) {
-    throw "Admin consent was not found for application permission '$permissionName'."
+    Write-Host "Granting the exact Microsoft Graph application role $permissionName..."
+    $assignmentBody = @{
+        principalId = $clientServicePrincipal.id
+        resourceId = $graphServicePrincipal.id
+        appRoleId = $appRole.id
+    } | ConvertTo-Json -Compress
+
+    az rest `
+        --method post `
+        --url "https://graph.microsoft.com/v1.0/servicePrincipals/$($clientServicePrincipal.id)/appRoleAssignments" `
+        --headers "Content-Type=application/json" `
+        --body $assignmentBody `
+        --output none
+    if ($LASTEXITCODE -ne 0) {
+        $grantExitCode = $LASTEXITCODE
+    }
+    else {
+        $grantExitCode = 0
+    }
+
+    $verifiedAssignment = Wait-ForAppRoleAssignment `
+        -ClientServicePrincipalId $clientServicePrincipal.id `
+        -ResourceServicePrincipalId $graphServicePrincipal.id `
+        -AppRoleId $appRole.id
+
+    if (-not $verifiedAssignment) {
+        if ($grantExitCode -ne 0) {
+            throw "Application permission grant failed. Run this script while signed in as a Global Administrator."
+        }
+        throw "The application role assignment was not visible for '$permissionName' after bounded polling."
+    }
 }
 
 Write-Host ""

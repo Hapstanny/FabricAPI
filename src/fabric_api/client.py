@@ -20,6 +20,7 @@ from .models import FabricItem, Page
 FABRIC_SCOPE = "https://api.fabric.microsoft.com/.default"
 POWER_BI_SCOPE = "https://analysis.windows.net/powerbi/api/.default"
 RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+RETRYABLE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 class RestClient:
@@ -87,8 +88,15 @@ class RestClient:
         *,
         params: Mapping[str, object] | None = None,
         json: object | None = None,
+        retryable: bool | None = None,
     ) -> Mapping[str, Any]:
-        payload = self.request_json(method, path_or_url, params=params, json=json)
+        payload = self.request_json(
+            method,
+            path_or_url,
+            params=params,
+            json=json,
+            retryable=retryable,
+        )
         if not isinstance(payload, Mapping):
             raise TypeError("Expected the API response to be a JSON object")
         return payload
@@ -100,25 +108,29 @@ class RestClient:
         *,
         params: Mapping[str, object] | None = None,
         json: object | None = None,
+        retryable: bool | None = None,
     ) -> object:
         self._validate_request_target(path_or_url)
-        for attempt in range(self._max_retries + 1):
+        normalized_method = method.upper()
+        should_retry = normalized_method in RETRYABLE_METHODS if retryable is None else retryable
+        max_attempts = self._max_retries + 1 if should_retry else 1
+        for attempt in range(max_attempts):
             token = self._get_access_token()
             try:
                 response = self._client.request(
-                    method,
+                    normalized_method,
                     path_or_url,
                     params=params,
                     json=json,
                     headers={"Authorization": " ".join(("Bearer", token.token))},
                 )
             except httpx.TransportError as error:
-                if attempt == self._max_retries:
+                if attempt == max_attempts - 1:
                     request_url = str(error.request.url) if error.request else path_or_url
-                    raise ApiTransportError(method, request_url, str(error)) from error
+                    raise ApiTransportError(normalized_method, request_url, str(error)) from error
                 self._sleep(_exponential_delay(attempt))
                 continue
-            if response.status_code not in RETRYABLE_STATUS_CODES or attempt == self._max_retries:
+            if response.status_code not in RETRYABLE_STATUS_CODES or attempt == max_attempts - 1:
                 break
             self._sleep(_retry_delay(response, attempt))
 
@@ -280,6 +292,7 @@ class FabricClient(RestClient):
                 "lastUpdatedAfter": _format_iso_datetime(after),
                 "lastUpdatedBefore": _format_iso_datetime(before),
             },
+            retryable=True,
         )
         if not isinstance(payload, list):
             raise TypeError("Expected pipeline activity-runs response to be a JSON array")

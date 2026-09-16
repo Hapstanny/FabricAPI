@@ -10,19 +10,10 @@ param(
     [switch] $CreateServicePrincipal,
 
     [ValidateNotNullOrEmpty()]
-    [string] $ServicePrincipalDisplayName = "Fabric API Automation",
-
-    [switch] $CreateClientSecret,
-
-    [ValidateRange(1, 2)]
-    [int] $ClientSecretYears = 1
+    [string] $ServicePrincipalDisplayName = "Fabric API Automation"
 )
 
 $ErrorActionPreference = "Stop"
-
-if ($CreateClientSecret -and -not $CreateServicePrincipal) {
-    throw "-CreateClientSecret requires -CreateServicePrincipal."
-}
 
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
     throw "Azure CLI (az) is required. Install it from https://aka.ms/installazurecliwindows."
@@ -94,20 +85,6 @@ if ($CreateServicePrincipal) {
         -TenantId $TenantId `
         -ClientId $automationClientId `
         -SkipLogin
-
-    if ($CreateClientSecret) {
-        Write-Host "Creating a $ClientSecretYears-year client secret..."
-        $credential = az ad app credential reset `
-            --id $automationClientId `
-            --append `
-            --display-name "fabric-api-client-secret" `
-            --years $ClientSecretYears `
-            --output json |
-            ConvertFrom-Json
-        if ($LASTEXITCODE -ne 0 -or -not $credential.password) {
-            throw "The service principal was created, but client-secret creation failed."
-        }
-    }
 }
 
 Write-Host ""
@@ -125,18 +102,5 @@ if ($CreateServicePrincipal) {
     Write-Host "Service-principal setup is complete:"
     Write-Host "  Tenant ID:  $TenantId"
     Write-Host "  Client ID:  $automationClientId"
-
-    if ($CreateClientSecret) {
-        Write-Warning "The client secret below is displayed once. Store it in an approved secret store and do not commit or log it."
-        Write-Host "  Client secret: $($credential.password)"
-        Write-Host ""
-        Write-Host "Use these values for app-only authentication:"
-        Write-Host "`$env:FABRIC_AUTH_MODE = `"client_secret`""
-        Write-Host "`$env:AZURE_TENANT_ID = `"$TenantId`""
-        Write-Host "`$env:AZURE_CLIENT_ID = `"$automationClientId`""
-        Write-Host "`$env:AZURE_CLIENT_SECRET = Read-Host `"Client secret`" -MaskInput"
-    }
-    else {
-        Write-Host "No credential was created. Add a certificate, federated credential, or rerun with -CreateClientSecret."
-    }
+    Write-Host "No credential was created or displayed. Configure a certificate, federated credential, managed identity, or separately managed client secret."
 }
