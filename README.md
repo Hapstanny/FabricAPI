@@ -77,6 +77,13 @@ resources.
 
 ### Export Purview audit and Copilot governance data
 
+> **Required permissions:** An interactive Entra user must be a member of the
+> Microsoft Purview **Audit Reader** or **Audit Manager** role group and must
+> authenticate through an app registration with delegated Microsoft Graph
+> `AuditLogsQuery.Read.All` permission and tenant admin consent. An app-only service
+> principal requires the Microsoft Graph **application** permission
+> `AuditLogsQuery.Read.All` with tenant admin consent.
+
 Create a structured Microsoft Graph v1.0 Purview Audit query and write the complete raw
 records plus flattened CSV summaries:
 
@@ -325,8 +332,16 @@ To force an interactive browser:
 
 ```powershell
 $env:FABRIC_AUTH_MODE = "interactive"
+$env:AZURE_TENANT_ID = "<tenant-id>"
+$env:AZURE_CLIENT_ID = "<app-registration-client-id>"
 fabric-api workspaces
 ```
+
+For Purview Audit commands, the custom app registration must have delegated
+`AuditLogsQuery.Read.All` with tenant admin consent. The signed-in user must also be
+assigned to the Purview **Audit Reader** role group, which includes **View-Only Audit
+Logs**, or **Audit Manager**, which includes **Audit Logs** and audit-management
+permissions.
 
 For a service principal, store credentials outside source control:
 
@@ -334,9 +349,14 @@ For a service principal, store credentials outside source control:
 $env:FABRIC_AUTH_MODE = "client_secret"
 $env:AZURE_TENANT_ID = "<tenant-id>"
 $env:AZURE_CLIENT_ID = "<application-id>"
-$env:AZURE_CLIENT_SECRET = "<secret>"
+$env:AZURE_CLIENT_SECRET = Read-Host "Client secret" -MaskInput
 fabric-api workspaces
 ```
+
+For Purview Audit commands, grant this service principal the Microsoft Graph
+**application** permission `AuditLogsQuery.Read.All` and tenant admin consent. Azure
+subscription RBAC roles such as Reader or Contributor do not grant access to the
+Microsoft 365 unified audit log.
 
 Fabric tokens use `https://api.fabric.microsoft.com/.default`. Power BI tokens use
 `https://analysis.windows.net/powerbi/api/.default`. Purview Audit Search uses the
@@ -459,12 +479,31 @@ Fabric Data Factory activity runs are separately available only in the context o
 | Poll status | `GET https://graph.microsoft.com/v1.0/security/auditLog/queries/{id}` |
 | List records | `GET https://graph.microsoft.com/v1.0/security/auditLog/queries/{id}/records` |
 
-For broad Microsoft 365 audit workloads, grant the Microsoft Graph application
-permission `AuditLogsQuery.Read.All` and provide administrator consent. More narrowly
-scoped `AuditLogsQuery-*` permissions exist, but may not cover the workloads selected
-by these governance exports. The tenant must have Microsoft Purview Audit available,
-and the calling identity and administrators must satisfy the applicable Purview Audit
-licensing, role, and data-access requirements.
+For broad Microsoft 365 audit workloads:
+
+- **Interactive/delegated authentication:** Add delegated Microsoft Graph
+  `AuditLogsQuery.Read.All` to the custom app registration, grant tenant admin
+  consent, and add the signed-in user to the Purview **Audit Reader** or **Audit
+  Manager** role group.
+- **Service-principal/application authentication:** Add Microsoft Graph application
+  `AuditLogsQuery.Read.All` to the app registration and grant tenant admin consent.
+
+More narrowly scoped `AuditLogsQuery-*` permissions exist, but may not cover the
+workloads selected by these governance exports. The tenant must have Microsoft
+Purview Audit available and meet the applicable licensing and data-access
+requirements.
+
+A response such as:
+
+```text
+403 ... User:<user-principal-name> dont have any permissions
+```
+
+means the request reached Graph but the delegated user/app combination lacks the
+required Graph consent, Purview audit role, or both. It is not caused by the query
+dates. Verify the custom app's delegated permission and admin consent, assign the user
+to Audit Reader or Audit Manager, sign in again, and retry. If the error names a user,
+the CLI used delegated authentication rather than the service principal.
 
 The client supports the v1.0 create contract's `filterStartDateTime`,
 `filterEndDateTime`, `recordTypeFilters` (including `powerBIAudit`), `serviceFilter`,
