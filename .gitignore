@@ -10,4 +10,7 @@ __pycache__/
 build/
 dist/
 htmlcov/
-
+copilot-usage/
+data-agent-audit/
+powerbi-usage/
+purview-audit/

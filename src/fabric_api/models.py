@@ -6,7 +6,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,7 +132,7 @@ class AuditLogQuery:
         status = raw_status if raw_status in statuses else "unknownFutureValue"
         return cls(
             id=str(value["id"]),
-            status=status,  # type: ignore[arg-type]
+            status=cast(AuditLogQueryStatus, status),
             raw=value,
         )
 

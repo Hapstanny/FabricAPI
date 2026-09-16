@@ -234,6 +234,12 @@ Each output directory contains:
 - `manifest.json`, which explicitly reports query status, errors, record count, and
   whether collection completed.
 
+JSON and JSONL files retain the unchanged API records and should be treated as
+sensitive governance data. CSV exports prefix spreadsheet formula-like string values
+with a literal apostrophe to prevent formula execution when opened in Excel. The
+documented output directories are ignored by Git; protect any custom output path and
+do not commit audit exports.
+
 The exporter retains partial records if a later page fails. A failed, cancelled, timed
 out, or partially collected query is marked `complete: false` and the command exits
 nonzero after writing the available artifacts.
@@ -346,11 +352,11 @@ list workspaces and copy the `id` value you want:
 fabric-api workspaces
 ```
 
-For example, if `fabric-api workspaces` returns workspace ID
-`cfafbeb1-8037-4d0c-896e-a46fb27ff229`, list all its items with:
+For example, select the first returned workspace and pass its ID to the item command:
 
 ```powershell
-fabric-api items cfafbeb1-8037-4d0c-896e-a46fb27ff229
+$workspace = fabric-api workspaces | ConvertFrom-Json | Select-Object -First 1
+fabric-api items $workspace.id
 ```
 
 The command calls

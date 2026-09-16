@@ -4,7 +4,7 @@ import csv
 import json
 from pathlib import Path
 
-from fabric_api.governance import analyze_audit_records, export_audit_collection
+from fabric_api.governance import _safe_csv_value, analyze_audit_records, export_audit_collection
 from fabric_api.models import AuditCollectionResult, AuditLogQuery, AuditLogRecord
 
 
@@ -33,6 +33,7 @@ def _records() -> tuple[AuditLogRecord, ...]:
                             {
                                 "Id": "model-1",
                                 "Type": "SemanticModel",
+                                "Name": '=HYPERLINK("https://attacker.example","Open")',
                                 "SensitivityLabelId": "label-1",
                                 "Action": "Read",
                             }
@@ -74,6 +75,22 @@ def test_governance_analysis_counts_copilot_and_power_bi_dimensions() -> None:
     assert analysis["audit-records"][0]["auditData"]
 
 
+def test_csv_values_neutralize_spreadsheet_formula_prefixes() -> None:
+    values = (
+        "=1+1",
+        "+1+1",
+        "-1+1",
+        "@SUM(1,1)",
+        "  =1+1",
+        "\tformula",
+        "\rformula",
+        "\nformula",
+    )
+
+    for value in values:
+        assert _safe_csv_value(value) == f"'{value}"
+
+
 def test_export_retains_raw_records_and_writes_all_summaries(tmp_path: Path) -> None:
     result = AuditCollectionResult(
         query=AuditLogQuery(
@@ -92,12 +109,19 @@ def test_export_retains_raw_records_and_writes_all_summaries(tmp_path: Path) -> 
     assert manifest["recordCount"] == 2
     raw = json.loads((tmp_path / "audit-records.json").read_text(encoding="utf-8"))
     assert raw["records"][0]["auditData"]["CopilotEventData"]["AppHost"] == "Power BI"
+    assert (
+        raw["records"][0]["auditData"]["CopilotEventData"]["AccessedResources"][0]["Name"]
+        == '=HYPERLINK("https://attacker.example","Open")'
+    )
     assert raw["errors"] == ["A later page failed"]
     assert len((tmp_path / "audit-records.jsonl").read_text(encoding="utf-8").splitlines()) == 2
     with (tmp_path / "audit-records.csv").open(encoding="utf-8", newline="") as stream:
         rows = list(csv.DictReader(stream))
     assert rows[0]["promptMessageCount"] == "1"
     assert rows[0]["appIdentity"] == "Copilot.Fabric.CopilotforPowerBI"
+    with (tmp_path / "copilot-resources.csv").open(encoding="utf-8", newline="") as stream:
+        resource_rows = list(csv.DictReader(stream))
+    assert resource_rows[0]["resourceName"] == '\'=HYPERLINK("https://attacker.example","Open")'
     assert set(manifest["files"]) >= {
         "manifest.json",
         "copilot-daily.csv",
