@@ -264,7 +264,17 @@ def _write_csv(
     with path.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(
+            {field: _safe_csv_value(value) for field, value in row.items()} for row in rows
+        )
+
+
+def _safe_csv_value(value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    if value.startswith(("\t", "\r", "\n")) or value.lstrip().startswith(("=", "+", "-", "@")):
+        return f"'{value}"
+    return value
 
 
 def _flatten_record(record: AuditLogRecord) -> dict[str, Any]:
