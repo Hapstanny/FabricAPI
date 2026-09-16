@@ -123,7 +123,7 @@ Interactive OAuth access combines two identities:
 
 Delegated permissions are not assigned directly to a user object.
 
-#### Create a dedicated interactive app
+#### Create interactive and service-principal apps
 
 Run the included setup script as a Global Administrator:
 
@@ -131,6 +131,17 @@ Run the included setup script as a Global Administrator:
 .\scripts\New-FabricApiInteractiveApp.ps1 `
   -TenantId "<tenant-id>" `
   -DisplayName "Fabric API Interactive CLI"
+```
+
+To create both a delegated interactive app and a separate app-only service principal:
+
+```powershell
+.\scripts\New-FabricApiInteractiveApp.ps1 `
+  -TenantId "<tenant-id>" `
+  -DisplayName "Fabric API Interactive CLI" `
+  -CreateServicePrincipal `
+  -ServicePrincipalDisplayName "Fabric API Automation" `
+  -CreateClientSecret
 ```
 
 > [!IMPORTANT]
@@ -144,10 +155,20 @@ The script:
 3. Creates the associated enterprise application.
 4. Adds delegated Microsoft Graph `AuditLogsQuery.Read.All`.
 5. Grants and verifies tenant-wide admin consent.
-6. Prints the exact environment-variable commands to use.
+6. Optionally creates a separate confidential app and service principal.
+7. Adds application Microsoft Graph `AuditLogsQuery.Read.All` to that automation
+   identity and verifies admin consent.
+8. Optionally creates a one-year client secret and prints both authentication
+   configurations.
 
-It intentionally creates no client secret because an interactive public client
-cannot safely keep one.
+The interactive public client never receives a secret. `-CreateClientSecret` applies
+only to the separate automation app and requires `-CreateServicePrincipal`.
+
+> [!CAUTION]
+> A generated client secret is displayed once. Store it immediately in an approved
+> secret store, do not paste it into source files, and clear terminal transcripts or
+> logs that may have captured it. Omit `-CreateClientSecret` when using a certificate
+> or federated credential instead.
 
 Then configure the CLI with the values printed by the script:
 
@@ -206,7 +227,17 @@ Reader** or **Audit Manager**:
 
 ### Service principal
 
-Store credentials outside source control:
+The combined setup command above can create a separate service principal, grant
+application `AuditLogsQuery.Read.All`, and optionally create a one-year client
+secret. To grant the application permission to an existing service-principal app:
+
+```powershell
+.\scripts\Grant-PurviewApplicationPermission.ps1 `
+  -TenantId "<tenant-id>" `
+  -ClientId "<service-principal-application-id>"
+```
+
+Store any credential outside source control, then configure the CLI:
 
 ```powershell
 $env:FABRIC_AUTH_MODE = "client_secret"
