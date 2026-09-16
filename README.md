@@ -91,8 +91,22 @@ Choose an authentication mode based on who should perform the operation:
 | Mode | Identity used | Recommended use |
 |---|---|---|
 | `default` | Azure CLI, developer tool, managed identity, or another credential in `DefaultAzureCredential` | Local development and Azure-hosted workloads |
-| `interactive` | Signed-in Entra user through a public-client app registration | Delegated user access and local Purview testing |
+| `interactive` | Signed-in Entra user through a public-client app registration | Purview Audit extraction as a user, or other operations that explicitly require delegated authentication |
 | `client_secret` | Service principal | Non-interactive automation |
+
+> [!IMPORTANT]
+> The custom interactive app, delegated Graph `AuditLogsQuery.Read.All`, and Purview
+> **Audit Reader/Audit Manager** role described below are specifically for
+> `purview-audit`, `copilot-usage`, and `powerbi-usage`.
+>
+> They are **not required** for ordinary Fabric commands such as `workspaces`,
+> `items`, `lakehouses`, or `warehouses`. Those commands can use the `default` mode
+> with Azure CLI or another supported `DefaultAzureCredential` identity that has
+> the required Fabric access.
+>
+> `activity-events` is also separate from Purview. It uses the Power BI API token
+> and requires the Power BI/Fabric administrator or service-principal permissions
+> documented under [Power BI REST and Admin APIs](#power-bi-rest-and-admin-apis).
 
 For Purview Audit extraction, the two supported authorization paths are:
 
@@ -114,7 +128,11 @@ $env:FABRIC_AUTH_MODE = "default"
 fabric-api workspaces
 ```
 
-### Interactive Entra user
+### Interactive Entra user for Purview Audit extraction
+
+This section configures delegated Entra-user access to Microsoft Purview Audit
+Search. It is not a prerequisite for the general Fabric REST commands or the Power
+BI Activity Events command.
 
 Interactive OAuth access combines two identities:
 
