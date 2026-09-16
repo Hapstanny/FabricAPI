@@ -8,12 +8,13 @@ import time
 from collections.abc import Callable, Iterator, Mapping
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
+from urllib.parse import urlsplit
 
 import httpx
 from azure.core.credentials import AccessToken, TokenCredential
 from typing_extensions import Self
 
-from .errors import ActivityWindowError, ApiError, ApiTransportError
+from .errors import ActivityWindowError, ApiError, ApiTransportError, UnsafeRequestUrlError
 from .models import FabricItem, Page
 
 FABRIC_SCOPE = "https://api.fabric.microsoft.com/.default"
@@ -34,6 +35,7 @@ class RestClient:
         max_retries: int = 4,
         transport: httpx.BaseTransport | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        trusted_host_suffixes: tuple[str, ...] = (),
     ) -> None:
         if timeout <= 0:
             raise ValueError("timeout must be greater than zero")
@@ -44,6 +46,16 @@ class RestClient:
         self._access_token: AccessToken | None = None
         self._max_retries = max_retries
         self._sleep = sleep
+        parsed_base = urlsplit(base_url)
+        if parsed_base.scheme.lower() != "https" or not parsed_base.hostname:
+            raise ValueError("base_url must be an absolute HTTPS URL")
+        if parsed_base.username or parsed_base.password:
+            raise ValueError("base_url cannot contain user information")
+        self._base_host = parsed_base.hostname.lower()
+        self._base_port = parsed_base.port or 443
+        self._trusted_host_suffixes = tuple(
+            suffix.lower().lstrip(".") for suffix in trusted_host_suffixes
+        )
         self._client = httpx.Client(
             base_url=base_url.rstrip("/"),
             timeout=timeout,
@@ -89,6 +101,7 @@ class RestClient:
         params: Mapping[str, object] | None = None,
         json: object | None = None,
     ) -> object:
+        self._validate_request_target(path_or_url)
         for attempt in range(self._max_retries + 1):
             token = self._get_access_token()
             try:
@@ -119,6 +132,33 @@ class RestClient:
         if self._access_token is None or self._access_token.expires_on <= time.time() + 60:
             self._access_token = self._credential.get_token(self._scope)
         return self._access_token
+
+    def _validate_request_target(self, path_or_url: str) -> None:
+        parsed = urlsplit(path_or_url)
+        if not parsed.scheme and not parsed.netloc:
+            return
+        if parsed.scheme.lower() != "https":
+            raise UnsafeRequestUrlError(path_or_url, "only HTTPS URLs are trusted")
+        if parsed.username or parsed.password:
+            raise UnsafeRequestUrlError(
+                path_or_url, "URLs containing user information are not trusted"
+            )
+        if not parsed.hostname:
+            raise UnsafeRequestUrlError(path_or_url, "the URL has no host")
+        host = parsed.hostname.lower()
+        trusted_suffix = any(
+            host == suffix or host.endswith(f".{suffix}") for suffix in self._trusted_host_suffixes
+        )
+        if host != self._base_host and not trusted_suffix:
+            raise UnsafeRequestUrlError(path_or_url, f"host '{host}' is not trusted")
+        try:
+            port = parsed.port or 443
+        except ValueError as error:
+            raise UnsafeRequestUrlError(path_or_url, "the URL contains an invalid port") from error
+        if (host == self._base_host and port != self._base_port) or (
+            host != self._base_host and port != 443
+        ):
+            raise UnsafeRequestUrlError(path_or_url, f"port {port} is not trusted")
 
     def iter_pages(
         self,
@@ -268,6 +308,7 @@ class PowerBIClient(RestClient):
             max_retries=max_retries,
             transport=transport,
             sleep=sleep,
+            trusted_host_suffixes=("analysis.windows.net",),
         )
         self._now = now
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 import httpx
@@ -13,7 +14,7 @@ from fabric_api.client import (
     PowerBIClient,
     _retry_delay,
 )
-from fabric_api.errors import ActivityWindowError, ApiError
+from fabric_api.errors import ActivityWindowError, ApiError, UnsafeRequestUrlError
 
 
 class FakeCredential:
@@ -23,6 +24,20 @@ class FakeCredential:
     def get_token(self, *scopes: str, **_: object) -> AccessToken:
         self.scopes.extend(scopes)
         return AccessToken("test-token", 4_102_444_800)
+
+
+def _continuation_handler(
+    continuation_url: str,
+    requests: list[httpx.Request],
+) -> Callable[[httpx.Request], httpx.Response]:
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={"value": [], "continuationUri": continuation_url},
+        )
+
+    return handler
 
 
 def test_lists_items_with_type_and_follows_continuation_uri() -> None:
@@ -237,7 +252,8 @@ def test_activity_events_follow_regional_continuation_uri_with_cached_token() ->
                     "activityEventEntities": [{"Id": "one"}],
                     "continuationToken": "token%2Bvalue%3D%3D",
                     "continuationUri": (
-                        "https://regional.example/v1.0/myorg/admin/activityevents"
+                        "https://wabi-us-east2-api.analysis.windows.net/"
+                        "v1.0/myorg/admin/activityevents"
                         "?continuationToken='token%2Bvalue%3D%3D'"
                     ),
                 },
@@ -255,9 +271,55 @@ def test_activity_events_follow_regional_continuation_uri_with_cached_token() ->
         )
 
     assert [event["Id"] for event in result] == ["one", "two"]
-    assert requests[1].url.host == "regional.example"
+    assert requests[1].url.host == "wabi-us-east2-api.analysis.windows.net"
     assert requests[1].url.params["continuationToken"] == "'token+value=='"
     assert credential.scopes == [POWER_BI_SCOPE]
+
+
+def test_authenticated_pagination_rejects_untrusted_urls() -> None:
+    continuation_urls = (
+        "http://api.fabric.microsoft.com/v1/next-page",
+        "https://attacker.example/steal-token",
+        "https://api.fabric.microsoft.com:444/v1/next-page",
+        "https://api.fabric.microsoft.com:notaport/v1/next-page",
+        "//attacker.example/steal-token",
+    )
+    for continuation_url in continuation_urls:
+        requests: list[httpx.Request] = []
+
+        with (
+            FabricClient(
+                FakeCredential(),
+                transport=httpx.MockTransport(_continuation_handler(continuation_url, requests)),
+            ) as client,
+            pytest.raises(UnsafeRequestUrlError, match="Refusing authenticated request"),
+        ):
+            client.list_workspaces()
+
+        assert len(requests) == 1
+
+
+def test_authenticated_pagination_accepts_configured_https_host() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "value": [{"id": "one"}],
+                    "continuationUri": "https://fabric.contoso.example/v1/next-page",
+                },
+            )
+        return httpx.Response(200, json={"value": [{"id": "two"}]})
+
+    with FabricClient(
+        FakeCredential(),
+        base_url="https://fabric.contoso.example",
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        assert client.list_workspaces() == [{"id": "one"}, {"id": "two"}]
 
 
 def test_activity_events_reject_cross_day_window() -> None:

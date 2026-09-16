@@ -24,6 +24,59 @@ def test_datamarts_shortcut_is_not_advertised() -> None:
     assert "datamarts" not in ITEM_COMMANDS
 
 
+def test_purview_commands_parse_documented_filters() -> None:
+    args = build_parser().parse_args(
+        [
+            "purview-audit",
+            "export",
+            "--start",
+            "2026-09-01T00:00:00Z",
+            "--end",
+            "2026-09-02T00:00:00Z",
+            "--output",
+            "audit-output",
+            "--record-type",
+            "powerBIAudit",
+            "--service",
+            "PowerBI",
+            "--operation",
+            "CopilotInteraction",
+            "--user",
+            "analyst@example.com",
+            "--ip-address",
+            "192.0.2.1",
+            "--object-id",
+            "report-id",
+            "--keyword",
+            "governance",
+        ]
+    )
+
+    assert args.command == "purview-audit"
+    assert args.purview_command == "export"
+    assert args.record_type == ["powerBIAudit"]
+    assert args.operation == ["CopilotInteraction"]
+    assert args.service == "PowerBI"
+
+
+def test_governance_shortcuts_require_time_window_and_output() -> None:
+    for command in ("copilot-usage", "powerbi-usage"):
+        args = build_parser().parse_args(
+            [
+                command,
+                "--start",
+                "2026-09-01T00:00:00Z",
+                "--end",
+                "2026-09-02T00:00:00Z",
+                "--output",
+                "audit-output",
+            ]
+        )
+
+        assert args.command == command
+        assert args.output.name == "audit-output"
+
+
 def test_auth_configuration_error_is_reported_as_json(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

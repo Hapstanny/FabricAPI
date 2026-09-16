@@ -16,7 +16,7 @@ class AuthenticationConfigurationError(FabricApiError):
 
 @dataclass(slots=True)
 class ApiError(FabricApiError):
-    """A non-success response from a Fabric or Power BI API."""
+    """A non-success response from a Microsoft service API."""
 
     status_code: int
     method: str
@@ -35,6 +35,17 @@ class ApiError(FabricApiError):
 
 class ActivityWindowError(FabricApiError, ValueError):
     """Raised when an activity-events query uses an unsupported time window."""
+
+
+@dataclass(slots=True)
+class UnsafeRequestUrlError(FabricApiError, ValueError):
+    """Raised before a bearer token can be sent to an untrusted URL."""
+
+    url: str
+    reason: str
+
+    def __str__(self) -> str:
+        return f"Refusing authenticated request to {self.url}: {self.reason}"
 
 
 @dataclass(slots=True)

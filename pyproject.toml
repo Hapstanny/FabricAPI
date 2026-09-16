@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "fabric-api-examples"
 version = "0.1.0"
-description = "Typed Python examples for Microsoft Fabric and Power BI REST APIs"
+description = "Typed Python examples for Fabric, Power BI, and Purview Audit APIs"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
