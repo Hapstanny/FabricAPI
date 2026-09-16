@@ -416,6 +416,11 @@ records:
 > API with:
 >
 > ```powershell
+> # Use the Azure CLI/default credential, not the Purview-only interactive app.
+> $env:FABRIC_AUTH_MODE = "default"
+> Remove-Item Env:AZURE_CLIENT_ID, Env:AZURE_CLIENT_SECRET -ErrorAction SilentlyContinue
+> az login --tenant "<tenant-id>"
+>
 > fabric-api activity-events `
 >   --start 2026-09-15T00:00:00Z `
 >   --end 2026-09-15T23:59:59Z `
@@ -431,6 +436,11 @@ records:
 > The start and end must have the **same UTC date**. For a full day, use
 > `00:00:00Z` through `23:59:59Z`. Unlike the Purview examples, do not use
 > `00:00:00Z` on the following day as the Activity Events end time.
+>
+> If you intentionally want to use `FABRIC_AUTH_MODE=interactive` instead, that
+> public-client app must separately request the Power BI delegated
+> `Tenant.Read.All` permission. The Purview setup script grants only Microsoft
+> Graph permissions and therefore cannot obtain a Power BI token by itself.
 
 Retrieve all five currently documented Fabric Copilot session operations:
 
