@@ -8,11 +8,15 @@ import os
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from .auth import TokenCredentialFactory
 from .client import FabricClient, PowerBIClient
 from .errors import FabricApiError
+from .governance import export_audit_collection
+from .models import AuditLogQueryFilters
+from .purview import PurviewAuditClient
 
 ITEM_COMMANDS: Mapping[str, str] = {
     "lakehouses": "Lakehouse",
@@ -27,11 +31,19 @@ ITEM_COMMANDS: Mapping[str, str] = {
     "dashboards": "Dashboard",
 }
 
+FABRIC_COPILOT_ACTIVITIES = (
+    "FabricCopilotSessionCreated",
+    "FabricCopilotSessionDeleted",
+    "FabricCopilotSessionMessageSent",
+    "FabricCopilotSessionUpdated",
+    "FabricCopilotSessionStateUpdated",
+)
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="fabric-api",
-        description="Microsoft Fabric and Power BI REST API examples",
+        description="Microsoft Fabric, Power BI, and Purview Audit API examples",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -86,6 +98,41 @@ def build_parser() -> argparse.ArgumentParser:
     )
     activity.add_argument("--start", required=True, type=_parse_datetime)
     activity.add_argument("--end", required=True, type=_parse_datetime)
+    activity.add_argument(
+        "--activity",
+        action="append",
+        default=[],
+        help="Exact Power BI/Fabric Activity value; repeat to query multiple activities",
+    )
+    activity.add_argument("--user", help="Filter by exact UserId")
+    activity.add_argument(
+        "--fabric-copilot",
+        action="store_true",
+        help="Query all documented Fabric Copilot session activities",
+    )
+
+    purview = subparsers.add_parser(
+        "purview-audit",
+        help="Query and export Microsoft Purview audit records through Microsoft Graph",
+    )
+    purview_commands = purview.add_subparsers(dest="purview_command", required=True)
+    purview_export = purview_commands.add_parser(
+        "export",
+        help="Export raw audit records and flattened CSV summaries",
+    )
+    _add_purview_arguments(purview_export, include_filters=True)
+
+    copilot_usage = subparsers.add_parser(
+        "copilot-usage",
+        help="Export CopilotInteraction audit usage and governance summaries",
+    )
+    _add_purview_arguments(copilot_usage, include_filters=False)
+
+    power_bi_usage = subparsers.add_parser(
+        "powerbi-usage",
+        help="Export Power BI/Fabric audit usage and governance summaries",
+    )
+    _add_purview_arguments(power_bi_usage, include_filters=False)
     return parser
 
 
@@ -100,6 +147,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps({"error": str(error)}, indent=2))
         return 1
     print(json.dumps(result, indent=2, default=str))
+    if isinstance(result, Mapping) and result.get("complete") is False:
+        return 1
     return 0
 
 
@@ -112,6 +161,22 @@ def _run(
 ) -> object:
     fabric_base = os.getenv("FABRIC_API_BASE_URL", "https://api.fabric.microsoft.com")
     power_bi_base = os.getenv("POWER_BI_API_BASE_URL", "https://api.powerbi.com")
+    graph_base = os.getenv("PURVIEW_GRAPH_BASE_URL", "https://graph.microsoft.com")
+
+    if args.command in {"purview-audit", "copilot-usage", "powerbi-usage"}:
+        filters = _purview_filters(args)
+        with PurviewAuditClient(
+            credential,
+            base_url=graph_base,
+            timeout=timeout,
+            max_retries=max_retries,
+        ) as client:
+            collection = client.run_query(
+                filters,
+                poll_interval=args.poll_interval,
+                poll_timeout=args.poll_timeout,
+            )
+        return export_audit_collection(collection, args.output)
 
     if args.command in {"gateways", "datasources", "activity-events"}:
         with PowerBIClient(
@@ -124,7 +189,15 @@ def _run(
                 return client.list_gateways()
             if args.command == "datasources":
                 return client.list_datasources(args.workspace_id, args.semantic_model_id)
-            return client.list_activity_events(args.start, args.end)
+            activities = list(args.activity)
+            if args.fabric_copilot:
+                activities.extend(FABRIC_COPILOT_ACTIVITIES)
+            return client.list_activity_events(
+                args.start,
+                args.end,
+                activities=tuple(activities),
+                user_id=args.user,
+            )
 
     with FabricClient(
         credential,
@@ -177,6 +250,61 @@ def _parse_datetime(value: str) -> datetime:
         raise argparse.ArgumentTypeError(
             "expected an ISO 8601 timestamp with an offset, for example 2026-09-14T00:00:00Z"
         ) from error
+
+
+def _add_purview_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    include_filters: bool,
+) -> None:
+    parser.add_argument("--start", required=True, type=_parse_datetime)
+    parser.add_argument("--end", required=True, type=_parse_datetime)
+    parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--display-name")
+    parser.add_argument("--poll-interval", type=float, default=5.0)
+    parser.add_argument("--poll-timeout", type=float, default=900.0)
+    if include_filters:
+        parser.add_argument("--record-type", action="append", default=[])
+        parser.add_argument("--service")
+        parser.add_argument("--operation", action="append", default=[])
+        parser.add_argument("--user", action="append", default=[])
+        parser.add_argument("--ip-address", action="append", default=[])
+        parser.add_argument("--object-id", action="append", default=[])
+        parser.add_argument("--keyword")
+
+
+def _purview_filters(args: argparse.Namespace) -> AuditLogQueryFilters:
+    record_types: tuple[str, ...] = ()
+    operations: tuple[str, ...] = ()
+    service: str | None = None
+    users: tuple[str, ...] = ()
+    ip_addresses: tuple[str, ...] = ()
+    object_ids: tuple[str, ...] = ()
+    keyword: str | None = None
+    if args.command == "copilot-usage":
+        operations = ("CopilotInteraction",)
+    elif args.command == "powerbi-usage":
+        record_types = ("powerBIAudit",)
+    else:
+        record_types = tuple(args.record_type)
+        operations = tuple(args.operation)
+        service = args.service
+        users = tuple(args.user)
+        ip_addresses = tuple(args.ip_address)
+        object_ids = tuple(args.object_id)
+        keyword = args.keyword
+    return AuditLogQueryFilters(
+        filter_start=args.start,
+        filter_end=args.end,
+        display_name=args.display_name,
+        record_type_filters=record_types,
+        service_filter=service,
+        operation_filters=operations,
+        user_principal_name_filters=users,
+        ip_address_filters=ip_addresses,
+        object_id_filters=object_ids,
+        keyword_filter=keyword,
+    )
 
 
 if __name__ == "__main__":
