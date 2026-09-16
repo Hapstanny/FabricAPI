@@ -343,6 +343,23 @@ assigned to the Purview **Audit Reader** role group, which includes **View-Only 
 Logs**, or **Audit Manager**, which includes **Audit Logs** and audit-management
 permissions.
 
+Delegated permission is not assigned directly to an Entra user. It is configured on
+an app registration, and the access token represents that app plus the signed-in
+user. A Global Administrator can add and consent the permission with the included
+Azure CLI PowerShell script:
+
+```powershell
+.\scripts\Grant-PurviewDelegatedPermission.ps1 `
+  -TenantId "<tenant-id>" `
+  -ClientId "<interactive-app-registration-client-id>"
+```
+
+The script resolves the current Microsoft Graph scope identifier rather than
+hard-coding it, adds `AuditLogsQuery.Read.All` as a delegated `Scope`, grants
+tenant-wide admin consent, and verifies the resulting OAuth permission grant. It
+does not assign the Purview role group; complete that separate user authorization
+step below.
+
 Assign the Purview role in the Microsoft Purview portal:
 
 1. Sign in to [Microsoft Purview](https://purview.microsoft.com) with an account that
