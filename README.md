@@ -337,6 +337,22 @@ $env:AZURE_CLIENT_ID = "<app-registration-client-id>"
 fabric-api workspaces
 ```
 
+To create a dedicated single-tenant interactive app registration from the command
+line, run the included setup script as a Global Administrator:
+
+```powershell
+.\scripts\New-FabricApiInteractiveApp.ps1 `
+  -TenantId "<tenant-id>" `
+  -DisplayName "Fabric API Interactive CLI"
+```
+
+It creates a public-client app with the `http://localhost` redirect URI, creates its
+enterprise application, grants delegated Microsoft Graph
+`AuditLogsQuery.Read.All`, applies tenant-wide admin consent, verifies the grant,
+and prints the exact `FABRIC_AUTH_MODE`, `AZURE_TENANT_ID`, and `AZURE_CLIENT_ID`
+commands. It does not create a client secret because interactive public clients
+must not embed one.
+
 For Purview Audit commands, the custom app registration must have delegated
 `AuditLogsQuery.Read.All` with tenant admin consent. The signed-in user must also be
 assigned to the Purview **Audit Reader** role group, which includes **View-Only Audit
