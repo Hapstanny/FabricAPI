@@ -375,6 +375,13 @@ For Purview Audit commands, grant this service principal the Microsoft Graph
 subscription RBAC roles such as Reader or Contributor do not grant access to the
 Microsoft 365 unified audit log.
 
+The permission must show **Type: Application** and **Status: Granted for
+&lt;tenant&gt;**. Delegated `AuditLog.Read.All` is a different Microsoft Graph
+permission and doesn't replace `AuditLogsQuery.Read.All` for this app-only Audit
+Search call. If a 403 error identifies `User:<user-principal-name>`, the CLI used
+delegated authentication instead of this service principal; verify
+`FABRIC_AUTH_MODE=client_secret` in the same terminal before retrying.
+
 Fabric tokens use `https://api.fabric.microsoft.com/.default`. Power BI tokens use
 `https://analysis.windows.net/powerbi/api/.default`. Purview Audit Search uses the
 Microsoft Graph audience and scope `https://graph.microsoft.com/.default`.
