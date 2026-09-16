@@ -5,10 +5,24 @@ param(
     [string] $TenantId,
 
     [ValidateNotNullOrEmpty()]
-    [string] $DisplayName = "Fabric API Interactive CLI"
+    [string] $DisplayName = "Fabric API Interactive CLI",
+
+    [switch] $CreateServicePrincipal,
+
+    [ValidateNotNullOrEmpty()]
+    [string] $ServicePrincipalDisplayName = "Fabric API Automation",
+
+    [switch] $CreateClientSecret,
+
+    [ValidateRange(1, 2)]
+    [int] $ClientSecretYears = 1
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($CreateClientSecret -and -not $CreateServicePrincipal) {
+    throw "-CreateClientSecret requires -CreateServicePrincipal."
+}
 
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
     throw "Azure CLI (az) is required. Install it from https://aka.ms/installazurecliwindows."
@@ -50,6 +64,52 @@ if ($LASTEXITCODE -ne 0 -or -not $servicePrincipal.id) {
 $permissionScript = Join-Path $PSScriptRoot "Grant-PurviewDelegatedPermission.ps1"
 & $permissionScript -TenantId $TenantId -ClientId $clientId -SkipLogin
 
+if ($CreateServicePrincipal) {
+    Write-Host ""
+    Write-Host "Creating confidential app registration '$ServicePrincipalDisplayName'..."
+    $automationApplication = az ad app create `
+        --display-name $ServicePrincipalDisplayName `
+        --sign-in-audience AzureADMyOrg `
+        --output json |
+        ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or -not $automationApplication.appId) {
+        throw "Failed to create the service-principal app registration."
+    }
+
+    $automationClientId = $automationApplication.appId
+
+    Write-Host "Creating its enterprise application (service principal)..."
+    $automationServicePrincipal = az ad sp create `
+        --id $automationClientId `
+        --output json |
+        ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or -not $automationServicePrincipal.id) {
+        throw "App registration '$automationClientId' was created, but its service principal could not be created."
+    }
+
+    $applicationPermissionScript = Join-Path `
+        $PSScriptRoot `
+        "Grant-PurviewApplicationPermission.ps1"
+    & $applicationPermissionScript `
+        -TenantId $TenantId `
+        -ClientId $automationClientId `
+        -SkipLogin
+
+    if ($CreateClientSecret) {
+        Write-Host "Creating a $ClientSecretYears-year client secret..."
+        $credential = az ad app credential reset `
+            --id $automationClientId `
+            --append `
+            --display-name "fabric-api-client-secret" `
+            --years $ClientSecretYears `
+            --output json |
+            ConvertFrom-Json
+        if ($LASTEXITCODE -ne 0 -or -not $credential.password) {
+            throw "The service principal was created, but client-secret creation failed."
+        }
+    }
+}
+
 Write-Host ""
 Write-Host "Interactive app setup is complete. Use these values in the current PowerShell session:"
 Write-Host ""
@@ -59,3 +119,24 @@ Write-Host "`$env:AZURE_CLIENT_ID = `"$clientId`""
 Write-Host "Remove-Item Env:AZURE_CLIENT_SECRET -ErrorAction SilentlyContinue"
 Write-Host ""
 Write-Host "Then run fabric-api and sign in with a user assigned to the Purview Audit Reader or Audit Manager role group."
+
+if ($CreateServicePrincipal) {
+    Write-Host ""
+    Write-Host "Service-principal setup is complete:"
+    Write-Host "  Tenant ID:  $TenantId"
+    Write-Host "  Client ID:  $automationClientId"
+
+    if ($CreateClientSecret) {
+        Write-Warning "The client secret below is displayed once. Store it in an approved secret store and do not commit or log it."
+        Write-Host "  Client secret: $($credential.password)"
+        Write-Host ""
+        Write-Host "Use these values for app-only authentication:"
+        Write-Host "`$env:FABRIC_AUTH_MODE = `"client_secret`""
+        Write-Host "`$env:AZURE_TENANT_ID = `"$TenantId`""
+        Write-Host "`$env:AZURE_CLIENT_ID = `"$automationClientId`""
+        Write-Host "`$env:AZURE_CLIENT_SECRET = Read-Host `"Client secret`" -MaskInput"
+    }
+    else {
+        Write-Host "No credential was created. Add a certificate, federated credential, or rerun with -CreateClientSecret."
+    }
+}
