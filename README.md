@@ -343,6 +343,23 @@ assigned to the Purview **Audit Reader** role group, which includes **View-Only 
 Logs**, or **Audit Manager**, which includes **Audit Logs** and audit-management
 permissions.
 
+Assign the Purview role in the Microsoft Purview portal:
+
+1. Sign in to [Microsoft Purview](https://purview.microsoft.com) with an account that
+   has the Purview **Role Management** role.
+2. Go to **Settings** > **Roles and scopes** > **Role groups**.
+3. Select **Audit Reader** for read/export access, or **Audit Manager** when audit
+   configuration access is also required.
+4. Select **Edit** > **Choose users** or **Choose groups**, select the identity, and
+   then select **Next** > **Save** > **Done**.
+
+Do not assume that
+`Add-RoleGroupMember -Identity "Audit Reader"` can perform this assignment.
+`Audit Reader` is a built-in Microsoft Purview portal role group and might not be
+exposed as an Exchange/Security and Compliance PowerShell `RoleGroup` object. In that
+case, the cmdlet returns `ManagementObjectNotFoundException`; use the Purview portal
+flow above.
+
 For a service principal, store credentials outside source control:
 
 ```powershell
