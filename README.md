@@ -409,6 +409,25 @@ records:
 
 ### Fabric Copilot activity events
 
+> [!TIP]
+> **Power BI/Fabric Copilot activity:** Microsoft documents
+> `CopilotInteraction` as **Copilot Interaction (Request Copilot features in
+> Fabric)**. Retrieve that exact activity from the Power BI Admin Activity Events
+> API with:
+>
+> ```powershell
+> fabric-api activity-events `
+>   --start 2026-09-15T00:00:00Z `
+>   --end 2026-09-15T23:59:59Z `
+>   --activity CopilotInteraction |
+>   Set-Content -Encoding utf8 .\powerbi-fabric-copilot-interactions.json
+> ```
+>
+> Add `--user analyst@contoso.com` to limit the request to one user. This command
+> uses the Power BI Admin Activity Events endpoint. It is separate from
+> `fabric-api copilot-usage`, which queries Microsoft Purview through Graph even
+> though both sources can contain an operation named `CopilotInteraction`.
+
 Retrieve all five currently documented Fabric Copilot session operations:
 
 ```powershell
