@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import pytest
+from azure.core.exceptions import ClientAuthenticationError
 
+from fabric_api.auth import TokenCredentialFactory
 from fabric_api.cli import FABRIC_COPILOT_ACTIVITIES, ITEM_COMMANDS, build_parser, main
 
 
@@ -110,3 +112,23 @@ def test_auth_configuration_error_is_reported_as_json(
 
     assert main(["workspaces"]) == 1
     assert '"error"' in capsys.readouterr().out
+
+
+def test_azure_identity_error_is_reported_as_json(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class FailingCredential:
+        def get_token(self, *_: str, **__: object) -> None:
+            raise ClientAuthenticationError("interactive sign-in failed")
+
+    monkeypatch.setattr(
+        TokenCredentialFactory,
+        "create",
+        lambda _: FailingCredential(),
+    )
+
+    assert main(["workspaces"]) == 1
+    output = capsys.readouterr().out
+    assert '"error": "interactive sign-in failed"' in output
+    assert "Traceback" not in output

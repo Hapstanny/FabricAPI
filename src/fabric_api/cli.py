@@ -11,6 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from azure.core.exceptions import AzureError
+
 from .auth import TokenCredentialFactory
 from .client import FabricClient, PowerBIClient
 from .errors import FabricApiError
@@ -143,7 +145,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         timeout = float(os.getenv("FABRIC_API_TIMEOUT_SECONDS", "30"))
         max_retries = int(os.getenv("FABRIC_API_MAX_RETRIES", "4"))
         result = _run(args, credential, timeout=timeout, max_retries=max_retries)
-    except (FabricApiError, ValueError) as error:
+    except (AzureError, FabricApiError, ValueError) as error:
         print(json.dumps({"error": str(error)}, indent=2))
         return 1
     print(json.dumps(result, indent=2, default=str))

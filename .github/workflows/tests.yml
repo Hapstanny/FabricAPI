@@ -27,3 +27,11 @@ jobs:
       - run: ruff check .
       - run: mypy src tests
       - run: pytest
+
+  provisioning-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate PowerShell provisioning scripts
+        shell: pwsh
+        run: ./tests/Test-ProvisioningScripts.ps1

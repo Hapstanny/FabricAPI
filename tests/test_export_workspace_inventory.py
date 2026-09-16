@@ -9,6 +9,7 @@ from examples.export_workspace_inventory import (
     collect_activity_events,
     collect_inventory,
 )
+from fabric_api.errors import ApiTransportError
 from fabric_api.models import FabricItem
 
 
@@ -75,6 +76,21 @@ def test_collect_inventory_can_limit_workspaces() -> None:
     )
 
     assert [entry["workspace"]["id"] for entry in inventory["workspaces"]] == ["workspace-two"]
+
+
+def test_collect_inventory_preserves_partial_results_after_transport_failure() -> None:
+    class PartiallyFailingClient(FakeFabricClient):
+        def list_items(self, workspace_id: str) -> list[FabricItem]:
+            if workspace_id == "workspace-two":
+                raise ApiTransportError("GET", "https://api.fabric.microsoft.com/items", "timeout")
+            return super().list_items(workspace_id)
+
+    inventory = collect_inventory(PartiallyFailingClient())  # type: ignore[arg-type]
+
+    assert len(inventory["workspaces"]) == 2
+    assert len(inventory["rows"]) == 1
+    assert inventory["errors"][0]["workspaceId"] == "workspace-two"
+    assert "timeout" in inventory["errors"][0]["error"]
 
 
 def test_collect_activity_events_can_filter_selected_workspaces() -> None:

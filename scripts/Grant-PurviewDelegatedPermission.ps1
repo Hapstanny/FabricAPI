@@ -15,6 +15,88 @@ $ErrorActionPreference = "Stop"
 
 $graphAppId = "00000003-0000-0000-c000-000000000000"
 $scopeName = "AuditLogsQuery.Read.All"
+$visibilityAttempts = 6
+
+function Wait-ForServicePrincipal {
+    param(
+        [Parameter(Mandatory)]
+        [string] $ApplicationId,
+
+        [int] $MaxAttempts = $visibilityAttempts
+    )
+
+    for ($attempt = 0; $attempt -lt $MaxAttempts; $attempt++) {
+        $servicePrincipal = az ad sp show --id $ApplicationId --output json 2>$null |
+            ConvertFrom-Json
+        if ($LASTEXITCODE -eq 0 -and $servicePrincipal) {
+            return $servicePrincipal
+        }
+        if ($attempt -lt $MaxAttempts - 1) {
+            Start-Sleep -Seconds ([Math]::Pow(2, $attempt))
+        }
+    }
+    return $null
+}
+
+function Get-DelegatedGrant {
+    param(
+        [Parameter(Mandatory)]
+        [string] $ClientServicePrincipalId,
+
+        [Parameter(Mandatory)]
+        [string] $ResourceServicePrincipalId
+    )
+
+    $filter = [Uri]::EscapeDataString(
+        "clientId eq '$ClientServicePrincipalId' and " +
+        "resourceId eq '$ResourceServicePrincipalId' and " +
+        "consentType eq 'AllPrincipals'"
+    )
+    $response = az rest `
+        --method get `
+        --url "https://graph.microsoft.com/v1.0/oauth2PermissionGrants?`$filter=$filter" `
+        --output json |
+        ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) {
+        throw "Delegated permission grants could not be inspected."
+    }
+    return $response.value | Select-Object -First 1
+}
+
+function Wait-ForDelegatedScope {
+    param(
+        [Parameter(Mandatory)]
+        [string] $ClientServicePrincipalId,
+
+        [Parameter(Mandatory)]
+        [string] $ResourceServicePrincipalId,
+
+        [Parameter(Mandatory)]
+        [string] $RequiredScope
+    )
+
+    for ($attempt = 0; $attempt -lt $visibilityAttempts; $attempt++) {
+        try {
+            $grant = Get-DelegatedGrant `
+                -ClientServicePrincipalId $ClientServicePrincipalId `
+                -ResourceServicePrincipalId $ResourceServicePrincipalId
+        }
+        catch {
+            if ($attempt -eq $visibilityAttempts - 1) {
+                throw
+            }
+            Start-Sleep -Seconds ([Math]::Pow(2, $attempt))
+            continue
+        }
+        if ($grant -and (($grant.scope -split " ") -contains $RequiredScope)) {
+            return $grant
+        }
+        if ($attempt -lt $visibilityAttempts - 1) {
+            Start-Sleep -Seconds ([Math]::Pow(2, $attempt))
+        }
+    }
+    return $null
+}
 
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
     throw "Azure CLI (az) is required. Install it from https://aka.ms/installazurecliwindows."
@@ -73,39 +155,68 @@ else {
     }
 }
 
-$clientServicePrincipal = az ad sp show --id $ClientId --output json 2>$null |
-    ConvertFrom-Json
-if ($LASTEXITCODE -ne 0 -or -not $clientServicePrincipal) {
+$clientServicePrincipal = Wait-ForServicePrincipal -ApplicationId $ClientId -MaxAttempts 1
+if (-not $clientServicePrincipal) {
     Write-Host "Creating the enterprise application for app registration $ClientId..."
-    $clientServicePrincipal = az ad sp create --id $ClientId --output json |
-        ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0 -or -not $clientServicePrincipal) {
-        throw "Failed to create the enterprise application for '$ClientId'."
+    az ad sp create --id $ClientId --output none
+    $createExitCode = $LASTEXITCODE
+    $clientServicePrincipal = Wait-ForServicePrincipal -ApplicationId $ClientId
+    if (-not $clientServicePrincipal) {
+        if ($createExitCode -ne 0) {
+            throw "Failed to create the enterprise application for '$ClientId'."
+        }
+        throw "The enterprise application for '$ClientId' was not visible after bounded polling."
     }
 }
 
-Write-Host "Granting tenant-wide admin consent..."
-az ad app permission admin-consent --id $ClientId --output none
-if ($LASTEXITCODE -ne 0) {
-    throw "Admin consent failed. Run this script while signed in as a Global Administrator."
-}
-
-$grants = az ad app permission list-grants --id $ClientId --output json |
-    ConvertFrom-Json
-if ($LASTEXITCODE -ne 0) {
-    throw "Permission was configured, but its consent grant could not be verified."
-}
-
-$verifiedGrant = $grants |
-    Where-Object {
-        $_.resourceId -eq $graphServicePrincipal.id -and
-        $_.consentType -eq "AllPrincipals" -and
-        (($_.scope -split " ") -contains $scopeName)
-    } |
-    Select-Object -First 1
+$grant = Get-DelegatedGrant `
+    -ClientServicePrincipalId $clientServicePrincipal.id `
+    -ResourceServicePrincipalId $graphServicePrincipal.id
+$verifiedGrant = $grant -and (($grant.scope -split " ") -contains $scopeName)
 
 if (-not $verifiedGrant) {
-    throw "Admin consent was not found for delegated scope '$scopeName'."
+    Write-Host "Granting tenant-wide consent for delegated scope $scopeName..."
+    if ($grant) {
+        $updatedScopes = @($grant.scope -split " ") + $scopeName |
+            Where-Object { $_ } |
+            Sort-Object -Unique
+        $grantBody = @{
+            scope = $updatedScopes -join " "
+        } | ConvertTo-Json -Compress
+        az rest `
+            --method patch `
+            --url "https://graph.microsoft.com/v1.0/oauth2PermissionGrants/$($grant.id)" `
+            --headers "Content-Type=application/json" `
+            --body $grantBody `
+            --output none
+    }
+    else {
+        $grantBody = @{
+            clientId = $clientServicePrincipal.id
+            consentType = "AllPrincipals"
+            principalId = $null
+            resourceId = $graphServicePrincipal.id
+            scope = $scopeName
+        } | ConvertTo-Json -Compress
+        az rest `
+            --method post `
+            --url "https://graph.microsoft.com/v1.0/oauth2PermissionGrants" `
+            --headers "Content-Type=application/json" `
+            --body $grantBody `
+            --output none
+    }
+    $grantExitCode = $LASTEXITCODE
+
+    $verifiedGrant = Wait-ForDelegatedScope `
+        -ClientServicePrincipalId $clientServicePrincipal.id `
+        -ResourceServicePrincipalId $graphServicePrincipal.id `
+        -RequiredScope $scopeName
+    if (-not $verifiedGrant) {
+        if ($grantExitCode -ne 0) {
+            throw "Delegated consent failed. Run this script while signed in as a Global Administrator."
+        }
+        throw "Tenant-wide consent was not visible for delegated scope '$scopeName' after bounded polling."
+    }
 }
 
 Write-Host ""
